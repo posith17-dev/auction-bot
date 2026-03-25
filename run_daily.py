@@ -133,6 +133,30 @@ def filter_alert_listings(
     )
 
 
+def filter_new_customs_notices(
+    listings: list[dict],
+    *,
+    new_listing_ids: list[str],
+) -> list[dict]:
+    if not new_listing_ids:
+        return []
+    new_ids = set(new_listing_ids)
+    matched = [
+        item
+        for item in listings
+        if item.get("listing_id") in new_ids and item.get("source") == "customs_notice"
+    ]
+    return sorted(
+        matched,
+        key=lambda row: (
+            str(row.get("auction_date") or ""),
+            str(row.get("region") or ""),
+            str(row.get("title") or ""),
+        ),
+        reverse=True,
+    )
+
+
 def _resolve_searches(cfg: dict) -> list[dict]:
     if cfg.get("searches"):
         return list(cfg["searches"])
@@ -177,9 +201,30 @@ def build_listing_message(item: dict) -> str:
         region = html.escape(str(item.get("region") or ""))
         auction_date = html.escape(str(item.get("auction_date") or "-"))
         source_url = html.escape(str(item.get("source_url") or ""))
+        attachments = ""
+        summary = ""
+        raw_json = item.get("raw_json") or ""
+        if isinstance(raw_json, str):
+            import json
+
+            try:
+                raw = json.loads(raw_json)
+                attachments = ", ".join((raw.get("attachments") or [])[:2])
+                summary = str(raw.get("detail_summary") or "")
+            except Exception:
+                attachments = ""
+                summary = ""
+        attachment_line = ""
+        if attachments:
+            attachment_line = f"\n📎 {html.escape(attachments[:120])}"
+        summary_line = ""
+        if summary:
+            summary_line = f"\n📝 {html.escape(summary[:160])}"
         return (
             f"📢 <b>[공매공고]</b> {region} {title}\n"
             f"📅 공고일: {auction_date}\n"
+            f"{attachment_line}"
+            f"{summary_line}\n"
             f"🔗 <a href=\"{source_url}\">상세보기</a>"
         )
 
@@ -261,6 +306,10 @@ def main() -> int:
         new_listing_ids=upsert_result["new_listing_ids"],
         conditions=cfg.get("alert_conditions"),
     )
+    customs_notice_matches = filter_new_customs_notices(
+        listings,
+        new_listing_ids=upsert_result["new_listing_ids"],
+    )
     pruned_count = prune_old_data(con, months=int(env_cfg.get("retain_months", 3)))
 
     report_name = "multi_source" if len(search_summaries) > 1 else search_summaries[0]["search_name"]
@@ -295,11 +344,19 @@ def main() -> int:
                 build_listing_message(item),
                 parse_mode="HTML",
             )
+        for item in customs_notice_matches:
+            send_message(
+                telegram_cfg.get("bot_token", ""),
+                telegram_cfg.get("chat_id", ""),
+                build_listing_message(item),
+                parse_mode="HTML",
+            )
 
     print(f"total_cnt={total_cnt}")
     print(f"items_fetched={items_fetched}")
     print(f"new_count={upsert_result['new_count']}")
     print(f"alert_match_count={len(alert_matches)}")
+    print(f"customs_alert_count={len(customs_notice_matches)}")
     print(f"pruned_count={pruned_count}")
     print(f"duckdb_path={db_path}")
     print(f"report_path={report_path}")
