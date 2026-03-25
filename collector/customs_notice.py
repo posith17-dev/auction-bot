@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.customs.go.kr"
 LIST_PATH = "/kcs/ad/go/gongMeList.do"
+DETAIL_PATH = "/kcs/ad/go/gongMeInfo.do"
 DEFAULT_LIST_URL = f"{BASE_URL}{LIST_PATH}"
 DEFAULT_HEADERS = {
     "User-Agent": (
@@ -26,6 +27,12 @@ DEFAULT_HEADERS = {
 
 @dataclass
 class CustomsNoticeSearchConfig:
+    search_name: str = "customs_notice_board"
+    office_name: str = "관세청"
+    base_url: str = BASE_URL
+    list_path: str = LIST_PATH
+    detail_path: str = DETAIL_PATH
+    referer_url: str | None = None
     mi: str = "2898"
     tcd: str = "1"
     page_index: int | None = None
@@ -56,15 +63,25 @@ def _extract_seq(url: str) -> str | None:
     return seq[0] if seq else None
 
 
-def _build_detail_url(mi: str, tcd: str, seq: str | None) -> str:
+def _build_detail_url(search: CustomsNoticeSearchConfig, seq: str | None) -> str:
     if not seq:
-        return DEFAULT_LIST_URL
-    return f"{BASE_URL}/kcs/ad/go/gongMeInfo.do?mi={mi}&seq={seq}&tcd={tcd}"
+        return f"{search.base_url}{search.list_path}"
+    return f"{search.base_url}{search.detail_path}?mi={search.mi}&seq={seq}&tcd={search.tcd}"
 
 
-def normalize_notice(item: dict[str, Any]) -> dict[str, Any]:
+def _default_referer_url(search: CustomsNoticeSearchConfig) -> str:
+    if search.referer_url:
+        return search.referer_url
+    parts = [part for part in search.list_path.split("/") if part]
+    if parts:
+        return f"{search.base_url}/{parts[0]}/"
+    return f"{search.base_url}/"
+
+
+def normalize_notice(item: dict[str, Any], search: CustomsNoticeSearchConfig | None = None) -> dict[str, Any]:
+    search = search or CustomsNoticeSearchConfig()
     listing_id = item.get("seq") or item.get("detail_url") or item.get("title")
-    department = item.get("department") or ""
+    department = item.get("department") or search.office_name or ""
     title = item.get("title") or ""
     published_date = item.get("published_date")
     return {
@@ -85,9 +102,9 @@ def normalize_notice(item: dict[str, Any]) -> dict[str, Any]:
         "auction_date": published_date,
         "area_m2": None,
         "status": "notice",
-        "source_url": item.get("detail_url") or DEFAULT_LIST_URL,
+        "source_url": item.get("detail_url") or f"{search.base_url}{search.list_path}",
         "raw_json": item,
-        "search_name": "customs_notice_board",
+        "search_name": search.search_name,
     }
 
 
@@ -114,7 +131,14 @@ class CustomsNoticeCollector:
         return params
 
     def fetch_list_html(self, search: CustomsNoticeSearchConfig) -> str:
-        resp = self.session.get(DEFAULT_LIST_URL, params=self.build_params(search), timeout=20)
+        headers = {"Referer": _default_referer_url(search)}
+        headers["Connection"] = "close"
+        resp = self.session.get(
+            f"{search.base_url}{search.list_path}",
+            params=self.build_params(search),
+            headers=headers,
+            timeout=20,
+        )
         resp.raise_for_status()
         return resp.text
 
@@ -143,7 +167,7 @@ class CustomsNoticeCollector:
             if not title:
                 continue
 
-            detail_url = _build_detail_url(search.mi, search.tcd, seq)
+            detail_url = _build_detail_url(search, seq)
             notices.append(
                 {
                     "number": _clean_text(number_cell.get_text(" ", strip=True)),
@@ -163,7 +187,7 @@ class CustomsNoticeCollector:
         return self.parse_list_html(html_text, search=search)
 
     def fetch_detail_text(self, detail_url: str) -> str:
-        resp = self.session.get(detail_url, timeout=20)
+        resp = self.session.get(detail_url, headers={"Connection": "close"}, timeout=20)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         content_candidates = [

@@ -3,7 +3,7 @@
 법원경매 일일 수집기 MVP입니다.
 
 현재 목표는 "좋은 경매 물건을 자동 판단해서 채널로 보내는 것"이고, 첫 소스로 법원경매(`courtauction.go.kr`)를 붙였습니다.
-다음 소스 후보로 관세청 공매공고 공개 게시판 collector를 추가했고, 현재 본청 게시판 첫 페이지 10건 파싱까지 확인했습니다.
+다음 소스 후보로 관세청 공매공고 공개 게시판 collector를 추가했고, 현재 본청/부산 게시판 첫 페이지 10건 파싱까지 확인했습니다.
 
 ## 현재 상태
 
@@ -155,6 +155,8 @@ systemctl status auction-daily.service --no-pager -n 30
 - collector: `collector/customs_notice.py`
 - 현재 검증 범위:
   - `https://www.customs.go.kr/kcs/ad/go/gongMeList.do?mi=2898&tcd=1`
-  - 첫 페이지 공고 10건 파싱 확인
+  - `https://www.customs.go.kr/busan/ad/go/gongMeList.do?mi=7178&tcd=1`
+  - 본청/부산 첫 페이지 공고 10건 파싱 확인
 - 주의:
   - `pageIndex`, `pageUnit` 파라미터는 공개 게시판에서 안정적으로 동작하는지 아직 미확정이라 기본 요청에서는 제외했습니다.
+  - 세관별로 `list_path`, `detail_path`, `referer`가 달라질 수 있어 설정 기반으로 일반화했습니다.
