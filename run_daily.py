@@ -397,10 +397,13 @@ def build_listing_message(item: dict) -> str:
             source_text = _label_market_source(str(market_status.get("source") or "").strip())
             note = html.escape(str(market_status.get("note") or "시세 자동확인 미완료"))
             query = html.escape(str(market_status.get("query") or primary_item.get("item_name") or "-"))
+            search_url = html.escape(str(market_status.get("search_url") or "").strip())
             compare_line = (
                 f"\n💹 시세비교: {note}"
                 f"\n🏷 시세소스: {html.escape(source_text)} / 검색어 {query}"
             )
+            if search_url:
+                compare_line += f"\n🔎 <a href=\"{search_url}\">시세검색</a>"
         elif "주류" in regulatory_flags:
             compare_line = "\n💹 시세비교: 주류 시세 자동확인 미완료"
         summary_line = ""
