@@ -58,8 +58,8 @@ def write_daily_report(
             "",
             "## customs notices",
             "",
-            "| type | title | office | 공고일 | attachments | summary |",
-            "|---|---|---|---|---|---|",
+            "| type | title | office | 공고일 | attachments | item preview | market compare | summary |",
+            "|---|---|---|---|---|---|---|---|",
         ]
     )
     if customs_listings:
@@ -71,9 +71,9 @@ def write_daily_report(
             raw_json = item.get("raw_json") or ""
             attachments = ""
             summary = ""
+            item_preview = ""
+            market_compare = ""
             if isinstance(raw_json, str):
-                import json
-
                 try:
                     raw = json.loads(raw_json)
                     attachment_items = raw.get("attachments") or []
@@ -86,15 +86,30 @@ def write_daily_report(
                     else:
                         attachments = ", ".join(str(item) for item in attachment_items if str(item))
                     summary = str(raw.get("detail_summary") or "")
+                    item_samples = raw.get("item_samples") or []
+                    if item_samples:
+                        item_preview = " | ".join(
+                            str(sample.get("item_name") or "")
+                            for sample in item_samples[:2]
+                            if str(sample.get("item_name") or "")
+                        )
+                    compare = raw.get("market_compare") or {}
+                    if compare:
+                        market_compare = (
+                            f"{int(compare.get('auction_unit_price') or 0):,}원 vs "
+                            f"{int(compare.get('market_median_price') or 0):,}원"
+                        )
                 except Exception:
                     attachments = ""
                     summary = ""
+                    item_preview = ""
+                    market_compare = ""
             lines.append(
                 f"| {item.get('property_type','')} | {item.get('title','')} | {item.get('region','')} | {item.get('auction_date') or ''} | "
-                f"{attachments[:120]} | {summary[:160]} |"
+                f"{attachments[:120]} | {item_preview[:120]} | {market_compare[:80]} | {summary[:160]} |"
             )
     else:
-        lines.append("| customs notice 0건 |  |  |  |  |  |")
+        lines.append("| customs notice 0건 |  |  |  |  |  |  |  |")
 
     lines.extend(
         [

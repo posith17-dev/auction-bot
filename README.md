@@ -14,6 +14,8 @@
   - daily markdown report
   - 텔레그램 신규 알림
   - customs 공고 전용 텔레그램 알림
+  - customs 첨부 xlsx 기반 대표 품목 미리보기
+  - 가능한 품목에 한해 다나와 단가 비교
 - 스케줄링:
   - `auction-daily.service`
   - `auction-daily.timer`
@@ -146,6 +148,8 @@ systemctl status auction-daily.service --no-pager -n 30
 - 제목
 - 공고일
 - 첨부파일 링크 1개
+- 대표 품목 1~2개
+- 가능 시 단가 비교
 - 짧은 요약
 - 상세보기 링크
 
@@ -179,7 +183,9 @@ systemctl status auction-daily.service --no-pager -n 30
   - 본청/부산 첫 페이지 공고 10건 파싱 확인
   - `run_daily.py`에서 customs notices를 함께 적재하고, 리포트에 customs 전용 섹션 출력
   - 신규 customs notices는 텔레그램에 유형 분류 + 첨부파일 링크와 함께 전송
+  - xlsx 첨부가 있으면 대표 품목을 추출하고, 다나와 매칭이 가능한 경우 단가 비교를 함께 표시
 - 주의:
   - `pageIndex`, `pageUnit` 파라미터는 공개 게시판에서 안정적으로 동작하는지 아직 미확정이라 기본 요청에서는 제외했습니다.
   - 세관별로 `list_path`, `detail_path`, `referer`가 달라질 수 있어 설정 기반으로 일반화했습니다.
   - 본청 게시판이 여러 지역 세관 공고를 이미 함께 보여주므로, 지역 게시판 추가 시 중복이 생길 수 있어 공고 제목/부서/등록일 기반으로 중복을 줄였습니다.
+  - 의류/주류/원자재처럼 다나와와 맞지 않는 품목은 단가 비교가 비어 있을 수 있습니다. 이 경우에도 대표 품목명은 텔레그램에 표시됩니다.

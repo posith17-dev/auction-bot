@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import os
 from pathlib import Path
 
@@ -219,23 +220,47 @@ def build_listing_message(item: dict) -> str:
         source_url = html.escape(str(item.get("source_url") or ""))
         attachments: list[dict] = []
         summary = ""
+        item_samples: list[dict] = []
+        market_compare: dict | None = None
         raw_json = item.get("raw_json") or ""
         if isinstance(raw_json, str):
-            import json
-
             try:
                 raw = json.loads(raw_json)
                 attachments = list(raw.get("attachments") or [])[:1]
                 summary = str(raw.get("detail_summary") or "")
+                item_samples = list(raw.get("item_samples") or [])[:2]
+                market_compare = raw.get("market_compare")
             except Exception:
                 attachments = []
                 summary = ""
+                item_samples = []
+                market_compare = None
         attachment_line = ""
         if attachments and attachments[0]:
             attachment = attachments[0]
             name = html.escape(str(attachment.get("name") or "첨부파일"))
             url = html.escape(str(attachment.get("url") or ""))
             attachment_line = f"\n📎 <a href=\"{url}\">{name}</a>" if url else f"\n📎 {name}"
+        item_line = ""
+        if item_samples:
+            rendered = []
+            for sample in item_samples:
+                item_name = str(sample.get("item_name") or "").strip()
+                spec = str(sample.get("spec") or "").strip()
+                if spec:
+                    rendered.append(f"{item_name} ({spec[:28]})")
+                else:
+                    rendered.append(item_name)
+            item_line = f"\n📦 {html.escape(' | '.join(rendered)[:180])}"
+        market_line = ""
+        if market_compare:
+            discount_pct = market_compare.get("discount_vs_market_pct")
+            discount_text = f"{discount_pct:.1f}%" if isinstance(discount_pct, (int, float)) else "-"
+            market_line = (
+                f"\n💹 단가비교: 공매 {int(market_compare.get('auction_unit_price') or 0):,}원"
+                f" / 시세 {int(market_compare.get('market_median_price') or 0):,}원"
+                f" ({discount_text})"
+            )
         summary_line = ""
         if summary:
             summary_line = f"\n📝 {html.escape(summary[:100])}"
@@ -244,6 +269,8 @@ def build_listing_message(item: dict) -> str:
             f"📌 {title}\n"
             f"📅 공고일: {auction_date}\n"
             f"{attachment_line}"
+            f"{item_line}"
+            f"{market_line}"
             f"{summary_line}\n"
             f"🔗 <a href=\"{source_url}\">상세보기</a>"
         )
@@ -321,6 +348,51 @@ def main() -> int:
     db_path = Path(env_cfg["duckdb_path"])
     con = connect(db_path)
     upsert_result = upsert_listings(con, listings)
+    new_customs_ids = {
+        listing_id
+        for listing_id in upsert_result["new_listing_ids"]
+        if listing_id.startswith("customs_notice:")
+    }
+    enriched_any = False
+    customs_targets = []
+    for item in listings:
+        if item.get("source") != "customs_notice":
+            continue
+        raw_json = item.get("raw_json") or ""
+        if not isinstance(raw_json, str):
+            continue
+        try:
+            raw = json.loads(raw_json)
+        except Exception:
+            continue
+        if raw.get("item_samples") is not None:
+            continue
+        customs_targets.append((str(item.get("auction_date") or ""), item, raw))
+
+    customs_targets.sort(key=lambda row: row[0], reverse=True)
+    target_ids = {
+        item.get("listing_id")
+        for _, item, _ in customs_targets[:5]
+    } | new_customs_ids
+
+    if target_ids:
+        for _, item, raw in customs_targets:
+            if item.get("listing_id") not in target_ids:
+                continue
+            raw_json = item.get("raw_json") or ""
+            detail_url = str(raw.get("detail_url") or item.get("source_url") or "")
+            attachments = list(raw.get("attachments") or [])
+            if not detail_url or not attachments:
+                continue
+            enrichment = customs_collector.enrich_notice_items(detail_url, attachments)
+            raw.update(enrichment)
+            item["raw_json"] = json.dumps(raw, ensure_ascii=False)
+            enriched_any = True
+        if enriched_any:
+            upsert_listings(
+                con,
+                [item for item in listings if item.get("source") == "customs_notice" and item.get("listing_id") in target_ids],
+            )
     alert_matches = filter_alert_listings(
         listings,
         new_listing_ids=upsert_result["new_listing_ids"],
