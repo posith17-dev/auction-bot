@@ -201,7 +201,7 @@ def build_listing_message(item: dict) -> str:
         region = html.escape(str(item.get("region") or ""))
         auction_date = html.escape(str(item.get("auction_date") or "-"))
         source_url = html.escape(str(item.get("source_url") or ""))
-        attachments = ""
+        attachments: list[dict] = []
         summary = ""
         raw_json = item.get("raw_json") or ""
         if isinstance(raw_json, str):
@@ -209,19 +209,27 @@ def build_listing_message(item: dict) -> str:
 
             try:
                 raw = json.loads(raw_json)
-                attachments = ", ".join((raw.get("attachments") or [])[:2])
+                attachments = list(raw.get("attachments") or [])[:2]
                 summary = str(raw.get("detail_summary") or "")
             except Exception:
-                attachments = ""
+                attachments = []
                 summary = ""
         attachment_line = ""
         if attachments:
-            attachment_line = f"\n📎 {html.escape(attachments[:120])}"
+            rendered = []
+            for idx, attachment in enumerate(attachments, start=1):
+                name = html.escape(str(attachment.get("name") or f"첨부{idx}"))
+                url = html.escape(str(attachment.get("url") or ""))
+                if url:
+                    rendered.append(f"<a href=\"{url}\">{name}</a>")
+                else:
+                    rendered.append(name)
+            attachment_line = f"\n📎 {' | '.join(rendered)}"
         summary_line = ""
         if summary:
             summary_line = f"\n📝 {html.escape(summary[:160])}"
         return (
-            f"📢 <b>[공매공고]</b> {region} {title}\n"
+            f"📢 <b>[세관공매]</b> {region} {title}\n"
             f"📅 공고일: {auction_date}\n"
             f"{attachment_line}"
             f"{summary_line}\n"

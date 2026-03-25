@@ -157,8 +157,13 @@ systemctl status auction-daily.service --no-pager -n 30
 - 현재 검증 범위:
   - `https://www.customs.go.kr/kcs/ad/go/gongMeList.do?mi=2898&tcd=1`
   - `https://www.customs.go.kr/busan/ad/go/gongMeList.do?mi=7178&tcd=1`
+  - `https://www.customs.go.kr/incheon/ad/go/gongMeList.do?tcd=1`
+  - `https://www.customs.go.kr/gwangyang/ad/go/gongMeList.do?tcd=1`
+  - `https://www.customs.go.kr/seoul/ad/go/gongMeList.do?tcd=1`
+  - `https://www.customs.go.kr/pyeongtaek/ad/go/gongMeList.do?tcd=1`
   - 본청/부산 첫 페이지 공고 10건 파싱 확인
   - `run_daily.py`에서 customs notices를 함께 적재하고, 리포트에 customs 전용 섹션 출력
+  - 신규 customs notices는 텔레그램에 첨부파일 링크와 함께 전송
 - 주의:
   - `pageIndex`, `pageUnit` 파라미터는 공개 게시판에서 안정적으로 동작하는지 아직 미확정이라 기본 요청에서는 제외했습니다.
   - 세관별로 `list_path`, `detail_path`, `referer`가 달라질 수 있어 설정 기반으로 일반화했습니다.

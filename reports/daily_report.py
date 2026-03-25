@@ -76,7 +76,15 @@ def write_daily_report(
 
                 try:
                     raw = json.loads(raw_json)
-                    attachments = ", ".join(raw.get("attachments") or [])
+                    attachment_items = raw.get("attachments") or []
+                    if attachment_items and isinstance(attachment_items[0], dict):
+                        attachments = ", ".join(
+                            str(item.get("name") or "")
+                            for item in attachment_items
+                            if str(item.get("name") or "")
+                        )
+                    else:
+                        attachments = ", ".join(str(item) for item in attachment_items if str(item))
                     summary = str(raw.get("detail_summary") or "")
                 except Exception:
                     attachments = ""

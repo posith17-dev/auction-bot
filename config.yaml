@@ -67,3 +67,27 @@ customs_searches:
     detail_path: /busan/ad/go/gongMeInfo.do
     mi: "7178"
     tcd: "1"
+  - search_name: incheon_customs_notice
+    office_name: 인천본부세관
+    base_url: https://www.customs.go.kr
+    list_path: /incheon/ad/go/gongMeList.do
+    detail_path: /incheon/ad/go/gongMeInfo.do
+    tcd: "1"
+  - search_name: gwangyang_customs_notice
+    office_name: 광양세관
+    base_url: https://www.customs.go.kr
+    list_path: /gwangyang/ad/go/gongMeList.do
+    detail_path: /gwangyang/ad/go/gongMeInfo.do
+    tcd: "1"
+  - search_name: seoul_customs_notice
+    office_name: 서울본부세관
+    base_url: https://www.customs.go.kr
+    list_path: /seoul/ad/go/gongMeList.do
+    detail_path: /seoul/ad/go/gongMeInfo.do
+    tcd: "1"
+  - search_name: pyeongtaek_customs_notice
+    office_name: 평택세관
+    base_url: https://www.customs.go.kr
+    list_path: /pyeongtaek/ad/go/gongMeList.do
+    detail_path: /pyeongtaek/ad/go/gongMeInfo.do
+    tcd: "1"

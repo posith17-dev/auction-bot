@@ -35,7 +35,7 @@ class CustomsNoticeSearchConfig:
     list_path: str = LIST_PATH
     detail_path: str = DETAIL_PATH
     referer_url: str | None = None
-    mi: str = "2898"
+    mi: str = ""
     tcd: str = "1"
     page_index: int | None = None
     page_unit: int | None = None
@@ -68,7 +68,13 @@ def _extract_seq(url: str) -> str | None:
 def _build_detail_url(search: CustomsNoticeSearchConfig, seq: str | None) -> str:
     if not seq:
         return f"{search.base_url}{search.list_path}"
-    return f"{search.base_url}{search.detail_path}?mi={search.mi}&seq={seq}&tcd={search.tcd}"
+    query_parts = []
+    if search.mi:
+        query_parts.append(f"mi={search.mi}")
+    query_parts.append(f"seq={seq}")
+    if search.tcd:
+        query_parts.append(f"tcd={search.tcd}")
+    return f"{search.base_url}{search.detail_path}?{'&'.join(query_parts)}"
 
 
 def _default_referer_url(search: CustomsNoticeSearchConfig) -> str:
@@ -88,6 +94,15 @@ def _extract_detail_summary(text: str) -> str:
     if match:
         return _clean_text(match.group(1))[:300]
     return cleaned[:300]
+
+
+def _normalize_attachment_href(detail_url: str, href: str | None) -> str:
+    if not href:
+        return ""
+    if href.startswith("http://") or href.startswith("https://"):
+        return href
+    parsed = urlparse(detail_url)
+    return f"{parsed.scheme}://{parsed.netloc}{href}"
 
 
 def normalize_notice(item: dict[str, Any], search: CustomsNoticeSearchConfig | None = None) -> dict[str, Any]:
@@ -127,10 +142,11 @@ class CustomsNoticeCollector:
         self.session.headers.update(DEFAULT_HEADERS)
 
     def build_params(self, search: CustomsNoticeSearchConfig) -> dict[str, str]:
-        params = {
-            "mi": search.mi,
-            "tcd": search.tcd,
-        }
+        params: dict[str, str] = {}
+        if search.mi:
+            params["mi"] = search.mi
+        if search.tcd:
+            params["tcd"] = search.tcd
         # The public board is sensitive to paging params; omit them unless we
         # have explicitly verified a working pagination flow.
         if search.page_index is not None:
@@ -225,7 +241,10 @@ class CustomsNoticeCollector:
         detail_text = _clean_text(detail_node.get_text(" ", strip=True) if detail_node else soup.get_text(" ", strip=True))
         title_node = soup.select_one("h4") or soup.select_one("h3")
         attachments = [
-            _clean_text(link.get_text(" ", strip=True))
+            {
+                "name": _clean_text(link.get_text(" ", strip=True)),
+                "url": _normalize_attachment_href(detail_url, link.get("href")),
+            }
             for link in (detail_node.select("a") if detail_node else [])
             if _clean_text(link.get_text(" ", strip=True))
             and _clean_text(link.get_text(" ", strip=True)) != "바로보기"
