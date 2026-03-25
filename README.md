@@ -13,6 +13,7 @@
 - 출력:
   - daily markdown report
   - 텔레그램 신규 알림
+  - customs 공고 전용 텔레그램 알림
 - 스케줄링:
   - `auction-daily.service`
   - `auction-daily.timer`
@@ -134,6 +135,20 @@ systemctl status auction-daily.service --no-pager -n 30
 2. `/home/ubuntu/trading-bot/.env`
 3. `/home/ubuntu/trading-system/config/secrets.env`
 
+추가 설정:
+- `telegram.chat_id`: 법원경매 기본 알림 채널
+- `telegram.customs_chat_id`: customs 공고 전용 채널
+- `telegram.customs_enabled`: customs 공고 발송 on/off
+
+현재 customs 알림 포맷:
+- `[세관공매/유형]`
+- 세관명
+- 제목
+- 공고일
+- 첨부파일 링크 1개
+- 짧은 요약
+- 상세보기 링크
+
 운영 메모:
 - 토큰은 한 번 채팅에 노출됐기 때문에, 실제 운영 전 BotFather에서 재발급 권장
 
@@ -163,7 +178,7 @@ systemctl status auction-daily.service --no-pager -n 30
   - `https://www.customs.go.kr/pyeongtaek/ad/go/gongMeList.do?tcd=1`
   - 본청/부산 첫 페이지 공고 10건 파싱 확인
   - `run_daily.py`에서 customs notices를 함께 적재하고, 리포트에 customs 전용 섹션 출력
-  - 신규 customs notices는 텔레그램에 첨부파일 링크와 함께 전송
+  - 신규 customs notices는 텔레그램에 유형 분류 + 첨부파일 링크와 함께 전송
 - 주의:
   - `pageIndex`, `pageUnit` 파라미터는 공개 게시판에서 안정적으로 동작하는지 아직 미확정이라 기본 요청에서는 제외했습니다.
   - 세관별로 `list_path`, `detail_path`, `referer`가 달라질 수 있어 설정 기반으로 일반화했습니다.

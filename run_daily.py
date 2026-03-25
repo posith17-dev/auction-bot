@@ -58,20 +58,35 @@ def resolve_telegram_config(raw: dict | None) -> dict:
     chat_id = telegram_cfg.get("chat_id", "").strip()
     bot_token_env = telegram_cfg.get("bot_token_env", "TELEGRAM_BOT_TOKEN")
     chat_id_env = telegram_cfg.get("chat_id_env", "TELEGRAM_CHAT_ID")
+    customs_enabled = telegram_cfg.get("customs_enabled")
+    customs_chat_id = str(telegram_cfg.get("customs_chat_id", "") or "").strip()
+    customs_chat_id_env = telegram_cfg.get("customs_chat_id_env", "")
 
     if not bot_token and bot_token_env:
         bot_token = os.getenv(bot_token_env, "").strip()
     if not chat_id and chat_id_env:
         chat_id = os.getenv(chat_id_env, "").strip()
     if (not bot_token and bot_token_env) or (not chat_id and chat_id_env):
-        file_values = _load_env_file_values(bot_token_env, chat_id_env)
+        lookup_keys = [key for key in [bot_token_env, chat_id_env, customs_chat_id_env] if key]
+        file_values = _load_env_file_values(*lookup_keys)
         if not bot_token and bot_token_env:
             bot_token = file_values.get(bot_token_env, "")
         if not chat_id and chat_id_env:
             chat_id = file_values.get(chat_id_env, "")
+        if not customs_chat_id and customs_chat_id_env:
+            customs_chat_id = file_values.get(customs_chat_id_env, "")
+
+    if not customs_chat_id and customs_chat_id_env:
+        customs_chat_id = os.getenv(customs_chat_id_env, "").strip()
+    if customs_enabled is None:
+        customs_enabled = telegram_cfg.get("enabled", False)
+    if not customs_chat_id:
+        customs_chat_id = chat_id
 
     telegram_cfg["bot_token"] = bot_token
     telegram_cfg["chat_id"] = chat_id
+    telegram_cfg["customs_enabled"] = bool(customs_enabled)
+    telegram_cfg["customs_chat_id"] = customs_chat_id
     return telegram_cfg
 
 
@@ -199,6 +214,7 @@ def build_listing_message(item: dict) -> str:
     if item.get("source") == "customs_notice":
         title = html.escape(str(item.get("title") or "공매공고"))
         region = html.escape(str(item.get("region") or ""))
+        notice_type = html.escape(str(item.get("property_type") or "공매공고"))
         auction_date = html.escape(str(item.get("auction_date") or "-"))
         source_url = html.escape(str(item.get("source_url") or ""))
         attachments: list[dict] = []
@@ -209,27 +225,23 @@ def build_listing_message(item: dict) -> str:
 
             try:
                 raw = json.loads(raw_json)
-                attachments = list(raw.get("attachments") or [])[:2]
+                attachments = list(raw.get("attachments") or [])[:1]
                 summary = str(raw.get("detail_summary") or "")
             except Exception:
                 attachments = []
                 summary = ""
         attachment_line = ""
-        if attachments:
-            rendered = []
-            for idx, attachment in enumerate(attachments, start=1):
-                name = html.escape(str(attachment.get("name") or f"첨부{idx}"))
-                url = html.escape(str(attachment.get("url") or ""))
-                if url:
-                    rendered.append(f"<a href=\"{url}\">{name}</a>")
-                else:
-                    rendered.append(name)
-            attachment_line = f"\n📎 {' | '.join(rendered)}"
+        if attachments and attachments[0]:
+            attachment = attachments[0]
+            name = html.escape(str(attachment.get("name") or "첨부파일"))
+            url = html.escape(str(attachment.get("url") or ""))
+            attachment_line = f"\n📎 <a href=\"{url}\">{name}</a>" if url else f"\n📎 {name}"
         summary_line = ""
         if summary:
-            summary_line = f"\n📝 {html.escape(summary[:160])}"
+            summary_line = f"\n📝 {html.escape(summary[:100])}"
         return (
-            f"📢 <b>[세관공매]</b> {region} {title}\n"
+            f"📢 <b>[세관공매/{notice_type}]</b> {region}\n"
+            f"📌 {title}\n"
             f"📅 공고일: {auction_date}\n"
             f"{attachment_line}"
             f"{summary_line}\n"
@@ -352,13 +364,14 @@ def main() -> int:
                 build_listing_message(item),
                 parse_mode="HTML",
             )
-        for item in customs_notice_matches:
-            send_message(
-                telegram_cfg.get("bot_token", ""),
-                telegram_cfg.get("chat_id", ""),
-                build_listing_message(item),
-                parse_mode="HTML",
-            )
+        if telegram_cfg.get("customs_enabled"):
+            for item in customs_notice_matches:
+                send_message(
+                    telegram_cfg.get("bot_token", ""),
+                    telegram_cfg.get("customs_chat_id", ""),
+                    build_listing_message(item),
+                    parse_mode="HTML",
+                )
 
     print(f"total_cnt={total_cnt}")
     print(f"items_fetched={items_fetched}")

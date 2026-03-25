@@ -105,11 +105,30 @@ def _normalize_attachment_href(detail_url: str, href: str | None) -> str:
     return f"{parsed.scheme}://{parsed.netloc}{href}"
 
 
+def classify_notice_type(title: str | None, summary: str | None = None) -> str:
+    text = f"{title or ''} {summary or ''}"
+    checks = [
+        ("수의계약", ["수의계약"]),
+        ("매각결과", ["매각결과", "낙찰결과"]),
+        ("재공고", ["재공고", "재입찰"]),
+        ("유찰", ["유찰"]),
+        ("공매공고", ["공매", "매각", "입찰", "불용품"]),
+    ]
+    for label, keywords in checks:
+        if any(keyword in text for keyword in keywords):
+            return label
+    return "기타공고"
+
+
 def normalize_notice(item: dict[str, Any], search: CustomsNoticeSearchConfig | None = None) -> dict[str, Any]:
     search = search or CustomsNoticeSearchConfig()
     department = item.get("department") or search.office_name or ""
     title = item.get("title") or ""
     published_date = item.get("published_date")
+    notice_type = item.get("notice_type") or classify_notice_type(
+        title,
+        item.get("detail_summary") or item.get("summary") or "",
+    )
     stable_key = "|".join([department, str(published_date or ""), title])
     listing_id = hashlib.sha1(stable_key.encode("utf-8")).hexdigest()[:16]
     return {
@@ -118,7 +137,7 @@ def normalize_notice(item: dict[str, Any], search: CustomsNoticeSearchConfig | N
         "title": title,
         "address": "",
         "region": department,
-        "property_type": "공매공고",
+        "property_type": notice_type,
         "appraisal_price": None,
         "min_bid_price": None,
         "discount_rate": None,
@@ -256,6 +275,10 @@ class CustomsNoticeCollector:
             "detail_created_date": created_match.group(1) if created_match else "",
             "detail_views": views_match.group(1) if views_match else "",
             "detail_summary": _extract_detail_summary(detail_text),
+            "notice_type": classify_notice_type(
+                _clean_text(title_node.get_text(" ", strip=True) if title_node else ""),
+                _extract_detail_summary(detail_text),
+            ),
             "attachments": attachments,
         }
 

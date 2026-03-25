@@ -58,8 +58,8 @@ def write_daily_report(
             "",
             "## customs notices",
             "",
-            "| title | office | 공고일 | attachments | summary |",
-            "|---|---|---|---|---|",
+            "| type | title | office | 공고일 | attachments | summary |",
+            "|---|---|---|---|---|---|",
         ]
     )
     if customs_listings:
@@ -90,11 +90,11 @@ def write_daily_report(
                     attachments = ""
                     summary = ""
             lines.append(
-                f"| {item.get('title','')} | {item.get('region','')} | {item.get('auction_date') or ''} | "
+                f"| {item.get('property_type','')} | {item.get('title','')} | {item.get('region','')} | {item.get('auction_date') or ''} | "
                 f"{attachments[:120]} | {summary[:160]} |"
             )
     else:
-        lines.append("| customs notice 0건 |  |  |  |  |")
+        lines.append("| customs notice 0건 |  |  |  |  |  |")
 
     lines.extend(
         [

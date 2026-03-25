@@ -9,6 +9,9 @@ telegram:
   chat_id: "-1003859076473"
   bot_token_env: "TELEGRAM_BOT_TOKEN"
   chat_id_env: "TELEGRAM_CHAT_ID"
+  customs_enabled: true
+  customs_chat_id: "-1003859076473"
+  customs_chat_id_env: ""
 
 alert_conditions:
   min_discount_rate: 0.30
