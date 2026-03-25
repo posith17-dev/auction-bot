@@ -227,6 +227,7 @@ def _label_market_source(source: str) -> str:
         "musinsa_fallback": "Musinsa",
         "danawa": "Danawa",
         "vivino": "Vivino",
+        "vivino_band": "Vivino",
         "vivino_search": "Vivino",
     }
     return mapping.get(source, source or "-")
@@ -325,6 +326,23 @@ def _build_customs_regulatory_note(*texts: str) -> str:
     return " / ".join(dict.fromkeys(notes))
 
 
+def _extract_flagged_item_names(item_samples: list[dict]) -> list[str]:
+    keywords = {
+        "주류": ["wine", "whisky", "whiskey", "vodka", "rum", "gin", "beer", "brandy", "liqueur", "liquor", "포도주", "와인", "주류", "양주", "위스키", "맥주", "보드카"],
+        "담배": ["cigarette", "cigar", "tobacco", "담배", "엽연초"],
+        "의약품": ["medicine", "drug", "pharma", "pharmaceutical", "medic", "의약품", "의약외품", "약품"],
+    }
+    matched: list[str] = []
+    for sample in item_samples:
+        name = str(sample.get("item_name") or "").strip()
+        spec = str(sample.get("spec") or "")
+        hs_name = str(sample.get("hs_name") or "")
+        haystack = " ".join([name, spec, hs_name]).lower()
+        if any(any(keyword in haystack for keyword in kw_list) for kw_list in keywords.values()) and name:
+            matched.append(name)
+    return list(dict.fromkeys(matched))
+
+
 def build_listing_message(item: dict) -> str:
     if item.get("source") == "customs_notice":
         title = html.escape(str(item.get("title") or "공매공고"))
@@ -379,7 +397,13 @@ def build_listing_message(item: dict) -> str:
         )
         regulatory_flags = _detect_customs_regulatory_flags(raw_title, summary, item_text)
         regulatory_note = _build_customs_regulatory_note(raw_title, summary, item_text)
+        flagged_item_names = _extract_flagged_item_names(all_item_samples)
         flag_line = f"\n🚩 주의품목: {html.escape(', '.join(regulatory_flags))}" if regulatory_flags else ""
+        flagged_items_line = (
+            f"\n🍷 규제품목 샘플: {html.escape(', '.join(flagged_item_names[:2]))}"
+            if flagged_item_names
+            else ""
+        )
         note_line = f"\n⚠️ {html.escape(regulatory_note)}" if regulatory_note else ""
         compare_line = ""
         if market_compare:
@@ -417,6 +441,7 @@ def build_listing_message(item: dict) -> str:
             f"{compare_line}"
             f"{secondary_line}"
             f"{flag_line}"
+            f"{flagged_items_line}"
             f"{note_line}"
             f"{summary_line}\n"
             f"🔗 <a href=\"{source_url}\">상세보기</a>"
