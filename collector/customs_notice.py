@@ -5,6 +5,7 @@ import re
 import hashlib
 import io
 import statistics
+import subprocess
 import time
 import zipfile
 from dataclasses import dataclass
@@ -301,6 +302,13 @@ def _extract_liquor_query(item_name: str, spec: str, hs_name: str) -> str:
             return cleaned[:120]
     fallback = " ".join(part for part in [item_name, hs_name] if part).strip()
     return re.sub(r"\s+", " ", fallback)[:120]
+
+
+def _extract_escaped_int(text: str, pattern: str) -> int | None:
+    match = re.search(pattern, text, re.IGNORECASE)
+    if not match:
+        return None
+    return _parse_int(match.group(1))
 
 
 def _normalize_market_query(query: str) -> str:
@@ -685,14 +693,33 @@ class CustomsNoticeCollector:
     def search_market_price_vivino(self, query: str) -> dict[str, Any] | None:
         if not query:
             return None
-        resp = self.session.get(
-            "https://www.vivino.com/search/wines",
-            params={"q": query},
-            headers={"Connection": "close"},
-            timeout=12,
-        )
-        resp.raise_for_status()
-        html_text = resp.text
+        html_text = ""
+        try:
+            resp = self.session.get(
+                "https://www.vivino.com/search/wines",
+                params={"q": query},
+                headers={"Connection": "close"},
+                timeout=12,
+            )
+            resp.raise_for_status()
+            html_text = resp.text
+        except Exception:
+            try:
+                result = subprocess.run(
+                    [
+                        "curl",
+                        "-L",
+                        "-sS",
+                        f"https://www.vivino.com/search/wines?q={requests.utils.quote(query)}",
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                html_text = result.stdout
+            except Exception:
+                html_text = ""
         if not html_text:
             return None
         unescaped = html_text.replace("&quot;", '"')
@@ -718,6 +745,28 @@ class CustomsNoticeCollector:
                 }
             )
         if not matches:
+            range_min = (
+                _extract_escaped_int(html_text, r'&quot;defaults&quot;:\{&quot;minimum&quot;:([0-9]+)')
+                or _extract_escaped_int(html_text, r'"defaults":\{"minimum":([0-9]+)')
+                or _extract_escaped_int(html_text, r'&quot;price_range&quot;:\{&quot;minimum&quot;:([0-9]+)')
+                or _extract_escaped_int(html_text, r'"price_range":\{"minimum":([0-9]+)')
+            )
+            range_max = (
+                _extract_escaped_int(html_text, r'&quot;defaults&quot;:\{&quot;minimum&quot;:[0-9]+,&quot;maximum&quot;:([0-9]+)')
+                or _extract_escaped_int(html_text, r'"defaults":\{"minimum":[^0-9]*[0-9]+,"maximum":([0-9]+)')
+                or _extract_escaped_int(html_text, r'&quot;price_range&quot;:\{&quot;minimum&quot;:[0-9]+,&quot;maximum&quot;:([0-9]+)')
+                or _extract_escaped_int(html_text, r'"price_range":\{"minimum":[^0-9]*[0-9]+,"maximum":([0-9]+)')
+            )
+            if range_min and range_max and range_max >= range_min:
+                return {
+                    "query": query,
+                    "range_min": int(range_min),
+                    "range_max": int(range_max),
+                    "best_title": query,
+                    "best_url": f"https://www.vivino.com/search/wines?q={requests.utils.quote(query)}",
+                    "match_score": 0.0,
+                    "source": "vivino_band",
+                }
             return None
         prices = [item["price"] for item in matches]
         best = max(matches, key=lambda item: (item["match_score"], -item["price"]))
@@ -751,6 +800,7 @@ class CustomsNoticeCollector:
             return {"item_samples": [], "market_compare": None}
         market_compare = None
         market_status: dict[str, Any] | None = None
+        selected_item_name: str | None = None
         for item in items[:3]:
             is_apparel_item = _is_apparel_candidate(item["item_name"], item["spec"], item["hs_name"])
             is_liquor_item = _is_liquor_candidate(item["item_name"], item["spec"], item["hs_name"])
@@ -778,6 +828,17 @@ class CustomsNoticeCollector:
             item["market_query"] = query
             item["market_price"] = market
             if market and item.get("auction_unit_price"):
+                if market.get("source") == "vivino_band":
+                    market_status = {
+                        "category": "liquor",
+                        "query": query,
+                        "status": "search_band",
+                        "source": "vivino_band",
+                        "note": f"Vivino 검색가 {int(market['range_min']):,}~{int(market['range_max']):,}원",
+                        "search_url": market.get("best_url") or "",
+                        "item_name": item["item_name"],
+                    }
+                    break
                 auction_unit_price = float(item["auction_unit_price"])
                 market_price = float(market["median_price"])
                 discount_vs_market = round((1 - (auction_unit_price / market_price)) * 100, 1) if market_price > 0 else None
@@ -792,6 +853,7 @@ class CustomsNoticeCollector:
                     "best_url": market.get("best_url") or "",
                     "source": market["source"],
                 }
+                selected_item_name = item["item_name"]
                 break
             if market is None and is_liquor_item and market_status is None:
                 market_status = {
@@ -803,8 +865,15 @@ class CustomsNoticeCollector:
                     "search_url": f"https://www.vivino.com/search/wines?q={requests.utils.quote(query)}",
                     "item_name": item["item_name"],
                 }
+                selected_item_name = item["item_name"]
+
+        display_items = items[:CUSTOMS_ITEM_LIMIT]
+        if selected_item_name:
+            prioritized = [item for item in display_items if item.get("item_name") == selected_item_name]
+            remainder = [item for item in display_items if item.get("item_name") != selected_item_name]
+            display_items = prioritized + remainder
         return {
-            "item_samples": items[:CUSTOMS_ITEM_PREVIEW_LIMIT],
+            "item_samples": display_items[:CUSTOMS_ITEM_PREVIEW_LIMIT],
             "market_compare": market_compare,
             "market_status": market_status,
         }
