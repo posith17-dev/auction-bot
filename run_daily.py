@@ -225,7 +225,17 @@ def main() -> int:
     for raw_search in raw_customs_searches:
         search_cfg = build_customs_search_config(raw_search)
         notices = customs_collector.fetch_notices(search_cfg)
-        normalized = [normalize_notice(item, search=search_cfg) for item in notices]
+        normalized = []
+        for item in notices:
+            detail = {}
+            if item.get("detail_url"):
+                try:
+                    detail = customs_collector.fetch_detail_data(item["detail_url"])
+                except Exception:
+                    detail = {}
+            enriched = dict(item)
+            enriched.update(detail)
+            normalized.append(normalize_notice(enriched, search=search_cfg))
         collected_listings.extend(normalized)
         search_summaries.append(
             {

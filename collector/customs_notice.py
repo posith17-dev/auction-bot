@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import hashlib
 from dataclasses import dataclass
@@ -79,6 +80,16 @@ def _default_referer_url(search: CustomsNoticeSearchConfig) -> str:
     return f"{search.base_url}/"
 
 
+def _extract_detail_summary(text: str) -> str:
+    cleaned = _clean_text(text)
+    if not cleaned:
+        return ""
+    match = re.search(r"조회수\s*[0-9,]+\s*(.*?)\s*첨부파일", cleaned)
+    if match:
+        return _clean_text(match.group(1))[:300]
+    return cleaned[:300]
+
+
 def normalize_notice(item: dict[str, Any], search: CustomsNoticeSearchConfig | None = None) -> dict[str, Any]:
     search = search or CustomsNoticeSearchConfig()
     department = item.get("department") or search.office_name or ""
@@ -105,7 +116,7 @@ def normalize_notice(item: dict[str, Any], search: CustomsNoticeSearchConfig | N
         "area_m2": None,
         "status": "notice",
         "source_url": item.get("detail_url") or f"{search.base_url}{search.list_path}",
-        "raw_json": item,
+        "raw_json": json.dumps(item, ensure_ascii=False),
         "search_name": search.search_name,
     }
 
@@ -201,7 +212,7 @@ class CustomsNoticeCollector:
         html_text = self.fetch_list_html(search)
         return self.parse_list_html(html_text, search=search)
 
-    def fetch_detail_text(self, detail_url: str) -> str:
+    def fetch_detail_data(self, detail_url: str) -> dict[str, Any]:
         try:
             resp = self.session.get(detail_url, headers={"Connection": "close"}, timeout=20)
         except requests.RequestException:
@@ -210,13 +221,25 @@ class CustomsNoticeCollector:
             resp = requests.get(detail_url, headers=fallback_headers, timeout=20)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
-        content_candidates = [
-            soup.select_one(".board_view"),
-            soup.select_one(".conBox"),
-            soup.select_one(".cont"),
-            soup.select_one("#content"),
+        detail_node = soup.select_one(".bbsView")
+        detail_text = _clean_text(detail_node.get_text(" ", strip=True) if detail_node else soup.get_text(" ", strip=True))
+        title_node = soup.select_one("h4") or soup.select_one("h3")
+        attachments = [
+            _clean_text(link.get_text(" ", strip=True))
+            for link in (detail_node.select("a") if detail_node else [])
+            if _clean_text(link.get_text(" ", strip=True))
+            and _clean_text(link.get_text(" ", strip=True)) != "바로보기"
         ]
-        for node in content_candidates:
-            if node:
-                return _clean_text(node.get_text("\n", strip=True))
-        return _clean_text(soup.get_text("\n", strip=True))
+        created_match = re.search(r"작성일\s*([0-9]{4}-[0-9]{2}-[0-9]{2})", detail_text)
+        views_match = re.search(r"조회수\s*([0-9,]+)", detail_text)
+        return {
+            "detail_title": _clean_text(title_node.get_text(" ", strip=True) if title_node else ""),
+            "detail_created_date": created_match.group(1) if created_match else "",
+            "detail_views": views_match.group(1) if views_match else "",
+            "detail_summary": _extract_detail_summary(detail_text),
+            "attachments": attachments,
+        }
+
+    def fetch_detail_text(self, detail_url: str) -> str:
+        detail = self.fetch_detail_data(detail_url)
+        return detail.get("detail_summary", "")

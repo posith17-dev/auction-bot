@@ -25,6 +25,9 @@ def write_daily_report(
     search_summaries: list[dict],
     alert_matches: list[dict],
 ) -> None:
+    customs_listings = [item for item in listings if item.get("source") == "customs_notice"]
+    court_listings = [item for item in listings if item.get("source") != "customs_notice"]
+
     lines = [
         "# auction-bot daily report",
         "",
@@ -49,6 +52,41 @@ def write_daily_report(
             f"| {item.get('source','courtauction')} | {item.get('search_name','')} | {item.get('region_name','')} | "
             f"{item.get('total_cnt',0)} | {item.get('total_pages',0)} | {item.get('items_fetched',0)} |"
         )
+
+    lines.extend(
+        [
+            "",
+            "## customs notices",
+            "",
+            "| title | office | 공고일 | attachments | summary |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    if customs_listings:
+        for item in sorted(
+            customs_listings,
+            key=lambda row: str(row.get("auction_date") or ""),
+            reverse=True,
+        )[:10]:
+            raw_json = item.get("raw_json") or ""
+            attachments = ""
+            summary = ""
+            if isinstance(raw_json, str):
+                import json
+
+                try:
+                    raw = json.loads(raw_json)
+                    attachments = ", ".join(raw.get("attachments") or [])
+                    summary = str(raw.get("detail_summary") or "")
+                except Exception:
+                    attachments = ""
+                    summary = ""
+            lines.append(
+                f"| {item.get('title','')} | {item.get('region','')} | {item.get('auction_date') or ''} | "
+                f"{attachments[:120]} | {summary[:160]} |"
+            )
+    else:
+        lines.append("| customs notice 0건 |  |  |  |  |")
 
     lines.extend(
         [
@@ -80,7 +118,7 @@ def write_daily_report(
         ]
     )
     for item in sorted(
-        listings,
+        court_listings,
         key=lambda row: (
             -(row.get("discount_rate") or 0),
             -(row.get("opportunity_score") or 0),
@@ -104,7 +142,7 @@ def write_daily_report(
         ]
     )
     for item in sorted(
-        listings,
+        court_listings,
         key=lambda row: (
             -(row.get("opportunity_score") or 0),
             -(row.get("discount_rate") or 0),
