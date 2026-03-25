@@ -291,6 +291,18 @@ def _extract_market_query(item_name: str, spec: str, hs_name: str) -> str:
     return re.sub(r"\s+", " ", query)[:120]
 
 
+def _extract_liquor_query(item_name: str, spec: str, hs_name: str) -> str:
+    candidates = [part.strip() for part in re.split(r"[,/;]+", spec or "") if part.strip()]
+    for candidate in candidates:
+        cleaned = re.sub(r"-?\s*alc\.?\s*[0-9.]+%?", "", candidate, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\([^)]*\)", "", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" -")
+        if len(cleaned) >= 5:
+            return cleaned[:120]
+    fallback = " ".join(part for part in [item_name, hs_name] if part).strip()
+    return re.sub(r"\s+", " ", fallback)[:120]
+
+
 def _normalize_market_query(query: str) -> str:
     normalized = query.lower()
     replacements = {
@@ -742,11 +754,12 @@ class CustomsNoticeCollector:
         for item in items[:3]:
             is_apparel_item = _is_apparel_candidate(item["item_name"], item["spec"], item["hs_name"])
             is_liquor_item = _is_liquor_candidate(item["item_name"], item["spec"], item["hs_name"])
-            query = (
-                item["item_name"].strip()
-                if is_apparel_item
-                else _extract_market_query(item["item_name"], item["spec"], item["hs_name"])
-            )
+            if is_apparel_item:
+                query = item["item_name"].strip()
+            elif is_liquor_item:
+                query = _extract_liquor_query(item["item_name"], item["spec"], item["hs_name"])
+            else:
+                query = _extract_market_query(item["item_name"], item["spec"], item["hs_name"])
             if not query:
                 continue
             market = None
