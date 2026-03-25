@@ -221,6 +221,15 @@ def _fmt_krw(value: int | None) -> str:
     return f"{value:,}원"
 
 
+def _label_market_source(source: str) -> str:
+    mapping = {
+        "musinsa": "Musinsa",
+        "musinsa_fallback": "Musinsa",
+        "danawa": "Danawa",
+    }
+    return mapping.get(source, source or "-")
+
+
 def build_listing_message(item: dict) -> str:
     if item.get("source") == "customs_notice":
         title = html.escape(str(item.get("title") or "공매공고"))
@@ -228,7 +237,6 @@ def build_listing_message(item: dict) -> str:
         notice_type = html.escape(str(item.get("property_type") or "공매공고"))
         auction_date = html.escape(str(item.get("auction_date") or "-"))
         source_url = html.escape(str(item.get("source_url") or ""))
-        attachments: list[dict] = []
         summary = ""
         item_samples: list[dict] = []
         market_compare: dict | None = None
@@ -236,42 +244,41 @@ def build_listing_message(item: dict) -> str:
         if isinstance(raw_json, str):
             try:
                 raw = json.loads(raw_json)
-                attachments = list(raw.get("attachments") or [])[:1]
                 summary = str(raw.get("detail_summary") or "")
                 item_samples = list(raw.get("item_samples") or [])[:2]
                 market_compare = raw.get("market_compare")
             except Exception:
-                attachments = []
                 summary = ""
                 item_samples = []
                 market_compare = None
-        attachment_line = ""
-        if attachments and attachments[0]:
-            attachment = attachments[0]
-            name = html.escape(str(attachment.get("name") or "첨부파일"))
-            url = html.escape(str(attachment.get("url") or ""))
-            attachment_line = f"\n📎 <a href=\"{url}\">{name}</a>" if url else f"\n📎 {name}"
-        item_line = ""
-        if item_samples:
-            rendered = []
-            for sample in item_samples:
-                item_name = str(sample.get("item_name") or "").strip()
-                spec = str(sample.get("spec") or "").strip()
-                if spec:
-                    rendered.append(f"{item_name} ({spec[:28]})")
-                else:
-                    rendered.append(item_name)
-            item_line = f"\n📦 {html.escape(' | '.join(rendered)[:180])}"
-        market_line = ""
+        primary_item = item_samples[0] if item_samples else {}
+        secondary_item = item_samples[1] if len(item_samples) > 1 else {}
+        primary_name = html.escape(str(primary_item.get("item_name") or "-"))
+        primary_unit_price = primary_item.get("auction_unit_price")
+        primary_quantity = primary_item.get("quantity")
+        primary_unit = html.escape(str(primary_item.get("unit") or "").strip())
+        primary_line = f"\n📦 대표품목: {primary_name}"
+        if primary_unit_price:
+            primary_line += f"\n💰 공매단가: {int(primary_unit_price):,}원"
+            if primary_quantity:
+                qty_text = f"{primary_quantity:,.0f} {primary_unit}" if primary_unit else f"{primary_quantity:,.0f}"
+                primary_line += f" / 수량 {qty_text}"
+        secondary_line = ""
+        if secondary_item:
+            secondary_name = html.escape(str(secondary_item.get("item_name") or "").strip())
+            if secondary_name:
+                secondary_line = f"\n🧾 보조품목: {secondary_name}"
+        compare_line = ""
         if market_compare:
             discount_pct = market_compare.get("discount_vs_market_pct")
             discount_text = f"{discount_pct:.1f}%" if isinstance(discount_pct, (int, float)) else "-"
             market_source = str(market_compare.get("source") or "").strip()
-            source_text = f" / {market_source}" if market_source else ""
-            market_line = (
-                f"\n💹 단가비교: 공매 {int(market_compare.get('auction_unit_price') or 0):,}원"
+            source_text = _label_market_source(market_source)
+            compare_line = (
+                f"\n💹 시세비교: 공매 {int(market_compare.get('auction_unit_price') or 0):,}원"
                 f" / 시세 {int(market_compare.get('market_median_price') or 0):,}원"
-                f" ({discount_text}{source_text})"
+                f" / 할인 {discount_text}"
+                f"\n🏷 시세소스: {html.escape(source_text)}"
             )
         summary_line = ""
         if summary:
@@ -280,9 +287,9 @@ def build_listing_message(item: dict) -> str:
             f"📢 <b>[세관공매/{notice_type}]</b> {region}\n"
             f"📌 {title}\n"
             f"📅 공고일: {auction_date}\n"
-            f"{attachment_line}"
-            f"{item_line}"
-            f"{market_line}"
+            f"{primary_line}"
+            f"{compare_line}"
+            f"{secondary_line}"
             f"{summary_line}\n"
             f"🔗 <a href=\"{source_url}\">상세보기</a>"
         )
