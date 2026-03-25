@@ -5,6 +5,7 @@ import re
 import hashlib
 import io
 import statistics
+import time
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -33,6 +34,66 @@ XLSX_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 CUSTOMS_ITEM_LIMIT = 5
 CUSTOMS_ITEM_PREVIEW_LIMIT = 3
 CUSTOMS_MARKET_RESULT_LIMIT = 5
+APPAREL_HINT_KEYWORDS = {
+    "jacket",
+    "jumper",
+    "coat",
+    "parka",
+    "hoodie",
+    "hood",
+    "sweatshirt",
+    "shirt",
+    "tshirt",
+    "tee",
+    "pants",
+    "jeans",
+    "denim",
+    "skirt",
+    "dress",
+    "shoes",
+    "shoe",
+    "slingback",
+    "mary jane",
+    "loafer",
+    "mule",
+    "ballet",
+    "sneaker",
+    "sneakers",
+    "loafer",
+    "loafers",
+    "slipper",
+    "sandals",
+    "boot",
+    "boots",
+    "bag",
+    "cap",
+    "hat",
+    "rashguard",
+    "reshguard",
+    "neoprene",
+    "outer",
+    "sportswear",
+    "apparel",
+    "footwear",
+    "의류",
+    "신발",
+    "구두",
+    "운동화",
+    "슬링백",
+    "메리제인",
+    "로퍼",
+    "발레리나",
+    "샌들",
+    "자켓",
+    "재킷",
+    "코트",
+    "후드",
+    "티셔츠",
+    "바지",
+    "치마",
+    "가방",
+    "래쉬가드",
+}
 
 
 @dataclass
@@ -201,6 +262,18 @@ def _extract_market_query(item_name: str, spec: str, hs_name: str) -> str:
     return re.sub(r"\s+", " ", query)[:120]
 
 
+def _normalize_market_query(query: str) -> str:
+    normalized = query.lower()
+    replacements = {
+        "reshguard": "rashguard",
+        "rash guard": "rashguard",
+        "tee shirt": "tshirt",
+    }
+    for before, after in replacements.items():
+        normalized = normalized.replace(before, after)
+    return normalized
+
+
 def _tokenize_compare(text: str) -> list[str]:
     stop = {
         "alc",
@@ -229,6 +302,11 @@ def _score_title_match(query_tokens: list[str], candidate_title: str) -> float:
         return 0.0
     overlap = sum(1 for token in query_tokens if token in candidate_tokens)
     return overlap / len(query_tokens)
+
+
+def _is_apparel_candidate(item_name: str, spec: str, hs_name: str) -> bool:
+    text = " ".join(part for part in [item_name, spec, hs_name] if part).lower()
+    return any(keyword in text for keyword in APPAREL_HINT_KEYWORDS)
 
 
 def classify_notice_type(title: str | None, summary: str | None = None) -> str:
@@ -309,25 +387,38 @@ class CustomsNoticeCollector:
         headers["Connection"] = "close"
         url = f"{search.base_url}{search.list_path}"
         params = self.build_params(search)
-        try:
-            resp = self.session.get(
-                url,
-                params=params,
-                headers=headers,
-                timeout=20,
-            )
-        except requests.RequestException:
-            # Some customs sub-sites intermittently reset pooled TLS connections.
-            fallback_headers = dict(DEFAULT_HEADERS)
-            fallback_headers.update(headers)
-            resp = requests.get(
-                url,
-                params=params,
-                headers=fallback_headers,
-                timeout=20,
-            )
-        resp.raise_for_status()
-        return resp.text
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                resp = self.session.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=20,
+                )
+                resp.raise_for_status()
+                return resp.text
+            except requests.RequestException as exc:
+                last_error = exc
+                try:
+                    # Some customs sub-sites intermittently reset pooled TLS connections.
+                    fallback_headers = dict(DEFAULT_HEADERS)
+                    fallback_headers.update(headers)
+                    resp = requests.get(
+                        url,
+                        params=params,
+                        headers=fallback_headers,
+                        timeout=20,
+                    )
+                    resp.raise_for_status()
+                    return resp.text
+                except requests.RequestException as fallback_exc:
+                    last_error = fallback_exc
+                    if attempt < 2:
+                        time.sleep(0.5 * (attempt + 1))
+        if last_error:
+            raise last_error
+        raise RuntimeError(f"Failed to fetch customs notice list: {url}")
 
     def parse_list_html(self, html_text: str, search: CustomsNoticeSearchConfig | None = None) -> list[dict[str, Any]]:
         soup = BeautifulSoup(html_text, "html.parser")
@@ -375,14 +466,27 @@ class CustomsNoticeCollector:
 
     def fetch_attachment_bytes(self, attachment_url: str, *, referer_url: str) -> bytes:
         headers = {"Referer": referer_url, "Connection": "close"}
-        try:
-            resp = self.session.get(attachment_url, headers=headers, timeout=30)
-        except requests.RequestException:
-            fallback_headers = dict(DEFAULT_HEADERS)
-            fallback_headers.update(headers)
-            resp = requests.get(attachment_url, headers=fallback_headers, timeout=30)
-        resp.raise_for_status()
-        return resp.content
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                resp = self.session.get(attachment_url, headers=headers, timeout=30)
+                resp.raise_for_status()
+                return resp.content
+            except requests.RequestException as exc:
+                last_error = exc
+                try:
+                    fallback_headers = dict(DEFAULT_HEADERS)
+                    fallback_headers.update(headers)
+                    resp = requests.get(attachment_url, headers=fallback_headers, timeout=30)
+                    resp.raise_for_status()
+                    return resp.content
+                except requests.RequestException as fallback_exc:
+                    last_error = fallback_exc
+                    if attempt < 2:
+                        time.sleep(0.5 * (attempt + 1))
+        if last_error:
+            raise last_error
+        raise RuntimeError(f"Failed to fetch customs attachment: {attachment_url}")
 
     def extract_items_from_attachment(self, attachment_url: str, *, referer_url: str) -> list[dict[str, Any]]:
         content = self.fetch_attachment_bytes(attachment_url, referer_url=referer_url)
@@ -461,6 +565,77 @@ class CustomsNoticeCollector:
             "source": "danawa",
         }
 
+    def search_market_price_musinsa(self, query: str) -> dict[str, Any] | None:
+        if not query:
+            return None
+        request_query = _normalize_market_query(query)
+        resp = self.session.get(
+            "https://api.musinsa.com/api2/dp/v2/plp/goods",
+            params={
+                "caller": "SEARCH",
+                "keyword": request_query,
+                "page": 1,
+                "size": CUSTOMS_MARKET_RESULT_LIMIT,
+            },
+            headers={"Connection": "close"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        items = payload.get("data", {}).get("list") or []
+        query_tokens = _tokenize_compare(query)
+        matches: list[dict[str, Any]] = []
+        for item in items[:CUSTOMS_MARKET_RESULT_LIMIT]:
+            title = _clean_text(item.get("goodsName"))
+            price = item.get("price") or item.get("normalPrice")
+            if not title or price in (None, ""):
+                continue
+            match_score = _score_title_match(query_tokens, title)
+            if match_score < 0.34:
+                continue
+            matches.append(
+                {
+                    "title": title,
+                    "price": int(price),
+                    "goods_link_url": item.get("goodsLinkUrl") or "",
+                    "match_score": round(match_score, 3),
+                }
+            )
+        if not matches:
+            fallback_matches = [
+                {
+                    "title": _clean_text(item.get("goodsName")),
+                    "price": int(item.get("price") or item.get("normalPrice")),
+                    "goods_link_url": item.get("goodsLinkUrl") or "",
+                }
+                for item in items[:3]
+                if item.get("goodsName") and (item.get("price") or item.get("normalPrice"))
+            ]
+            if not fallback_matches:
+                return None
+            prices = [item["price"] for item in fallback_matches]
+            best = fallback_matches[0]
+            return {
+                "query": query,
+                "min_price": min(prices),
+                "median_price": int(statistics.median(prices)),
+                "best_title": best["title"],
+                "best_url": best["goods_link_url"],
+                "match_score": 0.0,
+                "source": "musinsa_fallback",
+            }
+        prices = [item["price"] for item in matches]
+        best = max(matches, key=lambda item: (item["match_score"], -item["price"]))
+        return {
+            "query": query,
+            "min_price": min(prices),
+            "median_price": int(statistics.median(prices)),
+            "best_title": best["title"],
+            "best_url": best["goods_link_url"],
+            "match_score": best["match_score"],
+            "source": "musinsa",
+        }
+
     def enrich_notice_items(self, detail_url: str, attachments: list[dict[str, Any]]) -> dict[str, Any]:
         xlsx_attachment = next(
             (
@@ -481,13 +656,25 @@ class CustomsNoticeCollector:
             return {"item_samples": [], "market_compare": None}
         market_compare = None
         for item in items[:3]:
-            query = _extract_market_query(item["item_name"], item["spec"], item["hs_name"])
+            is_apparel_item = _is_apparel_candidate(item["item_name"], item["spec"], item["hs_name"])
+            query = (
+                item["item_name"].strip()
+                if is_apparel_item
+                else _extract_market_query(item["item_name"], item["spec"], item["hs_name"])
+            )
             if not query:
                 continue
+            market = None
             try:
-                market = self.search_market_price_danawa(query)
+                if is_apparel_item:
+                    market = self.search_market_price_musinsa(query)
             except Exception:
                 market = None
+            if market is None:
+                try:
+                    market = self.search_market_price_danawa(query)
+                except Exception:
+                    market = None
             item["market_query"] = query
             item["market_price"] = market
             if market and item.get("auction_unit_price"):
@@ -502,6 +689,7 @@ class CustomsNoticeCollector:
                     "market_min_price": int(market["min_price"]),
                     "discount_vs_market_pct": discount_vs_market,
                     "best_title": market["best_title"],
+                    "best_url": market.get("best_url") or "",
                     "source": market["source"],
                 }
                 break
@@ -511,13 +699,28 @@ class CustomsNoticeCollector:
         }
 
     def fetch_detail_data(self, detail_url: str) -> dict[str, Any]:
-        try:
-            resp = self.session.get(detail_url, headers={"Connection": "close"}, timeout=20)
-        except requests.RequestException:
-            fallback_headers = dict(DEFAULT_HEADERS)
-            fallback_headers["Connection"] = "close"
-            resp = requests.get(detail_url, headers=fallback_headers, timeout=20)
-        resp.raise_for_status()
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                resp = self.session.get(detail_url, headers={"Connection": "close"}, timeout=20)
+                resp.raise_for_status()
+                break
+            except requests.RequestException as exc:
+                last_error = exc
+                try:
+                    fallback_headers = dict(DEFAULT_HEADERS)
+                    fallback_headers["Connection"] = "close"
+                    resp = requests.get(detail_url, headers=fallback_headers, timeout=20)
+                    resp.raise_for_status()
+                    break
+                except requests.RequestException as fallback_exc:
+                    last_error = fallback_exc
+                    if attempt < 2:
+                        time.sleep(0.5 * (attempt + 1))
+        else:
+            if last_error:
+                raise last_error
+            raise RuntimeError(f"Failed to fetch customs detail: {detail_url}")
         soup = BeautifulSoup(resp.text, "html.parser")
         detail_node = soup.select_one(".bbsView")
         detail_text = _clean_text(detail_node.get_text(" ", strip=True) if detail_node else soup.get_text(" ", strip=True))

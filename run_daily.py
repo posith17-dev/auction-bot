@@ -203,6 +203,16 @@ def _merge_listings(listings: list[dict]) -> list[dict]:
     return list(merged.values())
 
 
+def _needs_customs_enrichment(raw: dict) -> bool:
+    item_samples = list(raw.get("item_samples") or [])
+    market_compare = raw.get("market_compare")
+    if not item_samples:
+        return True
+    if market_compare:
+        return False
+    return all(not sample.get("market_price") for sample in item_samples)
+
+
 def _fmt_krw(value: int | None) -> str:
     if value is None:
         return "-"
@@ -256,10 +266,12 @@ def build_listing_message(item: dict) -> str:
         if market_compare:
             discount_pct = market_compare.get("discount_vs_market_pct")
             discount_text = f"{discount_pct:.1f}%" if isinstance(discount_pct, (int, float)) else "-"
+            market_source = str(market_compare.get("source") or "").strip()
+            source_text = f" / {market_source}" if market_source else ""
             market_line = (
                 f"\n💹 단가비교: 공매 {int(market_compare.get('auction_unit_price') or 0):,}원"
                 f" / 시세 {int(market_compare.get('market_median_price') or 0):,}원"
-                f" ({discount_text})"
+                f" ({discount_text}{source_text})"
             )
         summary_line = ""
         if summary:
@@ -365,7 +377,7 @@ def main() -> int:
             raw = json.loads(raw_json)
         except Exception:
             continue
-        if raw.get("item_samples") is not None:
+        if not _needs_customs_enrichment(raw):
             continue
         customs_targets.append((str(item.get("auction_date") or ""), item, raw))
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -100,9 +101,12 @@ def write_daily_report(
                         )
                     compare = raw.get("market_compare") or {}
                     if compare:
+                        compare_source = str(compare.get("source") or "").strip()
+                        compare_suffix = f" ({compare_source})" if compare_source else ""
                         market_compare = (
                             f"{int(compare.get('auction_unit_price') or 0):,}원 vs "
                             f"{int(compare.get('market_median_price') or 0):,}원"
+                            f"{compare_suffix}"
                         )
                 except Exception:
                     attachments = ""
