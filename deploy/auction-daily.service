@@ -1,0 +1,12 @@
+[Unit]
+Description=Run auction-bot daily collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/auction-bot
+ExecStart=/home/ubuntu/trading-system/.venv/bin/python /home/ubuntu/auction-bot/run_daily.py --config /home/ubuntu/auction-bot/config.yaml
+

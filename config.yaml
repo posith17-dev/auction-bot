@@ -1,0 +1,53 @@
+environment:
+  python_bin: /home/ubuntu/trading-system/.venv/bin/python
+  duckdb_path: /home/ubuntu/auction-bot/storage/auction.duckdb
+  retain_months: 3
+
+telegram:
+  enabled: true
+  bot_token: ""
+  chat_id: "-1003859076473"
+  bot_token_env: "TELEGRAM_BOT_TOKEN"
+  chat_id_env: "TELEGRAM_CHAT_ID"
+
+alert_conditions:
+  min_discount_rate: 0.30
+  property_types: ["아파트", "다세대"]
+  regions: ["서울"]
+  max_appraisal_price: 500000000
+
+searches:
+  - name: seoul_apartment
+    region_name: 서울
+    cort_ofc_cd: B000210
+    cort_st_dvs: "1"
+    bid_dvs_cd: "000331"
+    bid_begin_ymd: "20260325"
+    bid_end_ymd: "20260408"
+    cort_auctn_srch_cond_cd: "0004601"
+    mvprp_rlet_dvs_cd: "00031R"
+    lcl_dspsl_gds_lst_usg_cd: "20000"
+    mcl_dspsl_gds_lst_usg_cd: "20100"
+    scl_dspsl_gds_lst_usg_cd: "20104"
+    page_size: 10
+    appraisal_min: ""
+    appraisal_max: ""
+    min_bid_min: ""
+    min_bid_max: ""
+  - name: seoul_apartment_upto_5eok
+    region_name: 서울
+    cort_ofc_cd: B000210
+    cort_st_dvs: "1"
+    bid_dvs_cd: "000331"
+    bid_begin_ymd: "20260325"
+    bid_end_ymd: "20260408"
+    cort_auctn_srch_cond_cd: "0004601"
+    mvprp_rlet_dvs_cd: "00031R"
+    lcl_dspsl_gds_lst_usg_cd: "20000"
+    mcl_dspsl_gds_lst_usg_cd: "20100"
+    scl_dspsl_gds_lst_usg_cd: "20104"
+    page_size: 10
+    appraisal_min: ""
+    appraisal_max: "500000000"
+    min_bid_min: ""
+    min_bid_max: ""

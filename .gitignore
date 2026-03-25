@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+
+storage/*.duckdb
+storage/*.wal
+
+reports/daily_report_*.md
+reports/*latest.md

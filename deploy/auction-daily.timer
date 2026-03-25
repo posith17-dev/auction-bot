@@ -1,0 +1,11 @@
+[Unit]
+Description=Run auction-bot daily at 00:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 00:00:00 UTC
+Persistent=true
+Unit=auction-daily.service
+
+[Install]
+WantedBy=timers.target
+
