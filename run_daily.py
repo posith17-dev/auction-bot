@@ -297,28 +297,6 @@ def _build_customs_regulatory_note(*texts: str) -> str:
     checks = [
         (
             [
-                "wine",
-                "whisky",
-                "whiskey",
-                "vodka",
-                "rum",
-                "gin",
-                "beer",
-                "brandy",
-                "liqueur",
-                "liquor",
-                "포도주",
-                "와인",
-                "주류",
-                "양주",
-                "위스키",
-                "맥주",
-                "보드카",
-            ],
-            "주류 품목: 인수·판매·유통 자격/인허가 확인 필요",
-        ),
-        (
-            [
                 "cigarette",
                 "cigar",
                 "tobacco",
