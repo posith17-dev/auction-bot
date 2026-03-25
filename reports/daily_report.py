@@ -16,6 +16,20 @@ def _md_cell(value) -> str:
     return text.replace("|", "/").replace("\n", " ").strip()
 
 
+def _detect_customs_regulatory_flags(*texts: str) -> str:
+    combined = " ".join(texts).lower()
+    labels = []
+    checks = [
+        ("주류", ["wine", "whisky", "whiskey", "vodka", "rum", "gin", "beer", "brandy", "liqueur", "liquor", "포도주", "와인", "주류", "양주", "위스키", "맥주", "보드카"]),
+        ("담배", ["cigarette", "cigar", "tobacco", "담배", "엽연초"]),
+        ("의약품", ["medicine", "drug", "pharma", "pharmaceutical", "medic", "의약품", "의약외품", "약품"]),
+    ]
+    for label, keywords in checks:
+        if any(keyword in combined for keyword in keywords):
+            labels.append(label)
+    return ", ".join(labels)
+
+
 def write_daily_report(
     report_path: Path,
     *,
@@ -64,8 +78,8 @@ def write_daily_report(
             "",
             "## customs notices",
             "",
-            "| type | title | office | 공고일 | attachments | item preview | market compare | summary |",
-            "|---|---|---|---|---|---|---|---|",
+            "| type | title | office | 공고일 | flags | attachments | item preview | market compare | summary |",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
     )
     if customs_listings:
@@ -79,6 +93,7 @@ def write_daily_report(
             summary = ""
             item_preview = ""
             market_compare = ""
+            flags = ""
             if isinstance(raw_json, str):
                 try:
                     raw = json.loads(raw_json)
@@ -99,6 +114,17 @@ def write_daily_report(
                             for sample in item_samples[:2]
                             if str(sample.get("item_name") or "")
                         )
+                    flags = _detect_customs_regulatory_flags(
+                        str(item.get("title") or ""),
+                        summary,
+                        " ".join(
+                            " ".join(
+                                str(sample.get(key) or "")
+                                for key in ("item_name", "spec", "hs_name")
+                            )
+                            for sample in item_samples
+                        ),
+                    )
                     compare = raw.get("market_compare") or {}
                     if compare:
                         compare_source = str(compare.get("source") or "").strip()
@@ -113,12 +139,13 @@ def write_daily_report(
                     summary = ""
                     item_preview = ""
                     market_compare = ""
+                    flags = ""
             lines.append(
                 f"| {_md_cell(item.get('property_type',''))} | {_md_cell(item.get('title',''))} | {_md_cell(item.get('region',''))} | {_md_cell(item.get('auction_date') or '')} | "
-                f"{_md_cell(attachments[:120])} | {_md_cell(item_preview[:120])} | {_md_cell(market_compare[:80])} | {_md_cell(summary[:160])} |"
+                f"{_md_cell(flags[:40])} | {_md_cell(attachments[:120])} | {_md_cell(item_preview[:120])} | {_md_cell(market_compare[:80])} | {_md_cell(summary[:160])} |"
             )
     else:
-        lines.append("| customs notice 0건 |  |  |  |  |  |  |  |")
+        lines.append("| customs notice 0건 |  |  |  |  |  |  |  |  |")
 
     lines.extend(
         [

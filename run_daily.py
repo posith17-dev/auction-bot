@@ -230,14 +230,131 @@ def _label_market_source(source: str) -> str:
     return mapping.get(source, source or "-")
 
 
+def _detect_customs_regulatory_flags(*texts: str) -> list[str]:
+    combined = " ".join(texts).lower()
+    checks = [
+        (
+            "주류",
+            [
+                "wine",
+                "whisky",
+                "whiskey",
+                "vodka",
+                "rum",
+                "gin",
+                "beer",
+                "brandy",
+                "liqueur",
+                "liquor",
+                "포도주",
+                "와인",
+                "주류",
+                "양주",
+                "위스키",
+                "맥주",
+                "보드카",
+            ],
+            "주류 품목: 인수·판매·유통 자격/인허가 확인 필요",
+        ),
+        (
+            "담배",
+            [
+                "cigarette",
+                "cigar",
+                "tobacco",
+                "담배",
+                "엽연초",
+            ],
+            "담배 품목: 인수·판매·유통 자격/인허가 확인 필요",
+        ),
+        (
+            "의약품",
+            [
+                "medicine",
+                "drug",
+                "pharma",
+                "pharmaceutical",
+                "medic",
+                "의약품",
+                "의약외품",
+                "약품",
+            ],
+            "의약품/유사의약품: 자격·통관·유통 제한 여부 확인 필요",
+        ),
+    ]
+    flags: list[str] = []
+    for label, keywords, _ in checks:
+        if any(keyword in combined for keyword in keywords):
+            flags.append(label)
+    return flags
+
+
+def _build_customs_regulatory_note(*texts: str) -> str:
+    combined = " ".join(texts).lower()
+    notes = []
+    checks = [
+        (
+            [
+                "wine",
+                "whisky",
+                "whiskey",
+                "vodka",
+                "rum",
+                "gin",
+                "beer",
+                "brandy",
+                "liqueur",
+                "liquor",
+                "포도주",
+                "와인",
+                "주류",
+                "양주",
+                "위스키",
+                "맥주",
+                "보드카",
+            ],
+            "주류 품목: 인수·판매·유통 자격/인허가 확인 필요",
+        ),
+        (
+            [
+                "cigarette",
+                "cigar",
+                "tobacco",
+                "담배",
+                "엽연초",
+            ],
+            "담배 품목: 인수·판매·유통 자격/인허가 확인 필요",
+        ),
+        (
+            [
+                "medicine",
+                "drug",
+                "pharma",
+                "pharmaceutical",
+                "medic",
+                "의약품",
+                "의약외품",
+                "약품",
+            ],
+            "의약품/유사의약품: 자격·통관·유통 제한 여부 확인 필요",
+        ),
+    ]
+    for keywords, note in checks:
+        if any(keyword in combined for keyword in keywords):
+            notes.append(note)
+    return " / ".join(dict.fromkeys(notes))
+
+
 def build_listing_message(item: dict) -> str:
     if item.get("source") == "customs_notice":
         title = html.escape(str(item.get("title") or "공매공고"))
+        raw_title = str(item.get("title") or "")
         region = html.escape(str(item.get("region") or ""))
         notice_type = html.escape(str(item.get("property_type") or "공매공고"))
         auction_date = html.escape(str(item.get("auction_date") or "-"))
         source_url = html.escape(str(item.get("source_url") or ""))
         summary = ""
+        all_item_samples: list[dict] = []
         item_samples: list[dict] = []
         market_compare: dict | None = None
         raw_json = item.get("raw_json") or ""
@@ -245,10 +362,12 @@ def build_listing_message(item: dict) -> str:
             try:
                 raw = json.loads(raw_json)
                 summary = str(raw.get("detail_summary") or "")
-                item_samples = list(raw.get("item_samples") or [])[:2]
+                all_item_samples = list(raw.get("item_samples") or [])
+                item_samples = all_item_samples[:2]
                 market_compare = raw.get("market_compare")
             except Exception:
                 summary = ""
+                all_item_samples = []
                 item_samples = []
                 market_compare = None
         primary_item = item_samples[0] if item_samples else {}
@@ -268,6 +387,17 @@ def build_listing_message(item: dict) -> str:
             secondary_name = html.escape(str(secondary_item.get("item_name") or "").strip())
             if secondary_name:
                 secondary_line = f"\n🧾 보조품목: {secondary_name}"
+        item_text = " ".join(
+            " ".join(
+                str(sample.get(key) or "")
+                for key in ("item_name", "spec", "hs_name")
+            )
+            for sample in all_item_samples
+        )
+        regulatory_flags = _detect_customs_regulatory_flags(raw_title, summary, item_text)
+        regulatory_note = _build_customs_regulatory_note(raw_title, summary, item_text)
+        flag_line = f"\n🚩 주의품목: {html.escape(', '.join(regulatory_flags))}" if regulatory_flags else ""
+        note_line = f"\n⚠️ {html.escape(regulatory_note)}" if regulatory_note else ""
         compare_line = ""
         if market_compare:
             discount_pct = market_compare.get("discount_vs_market_pct")
@@ -290,6 +420,8 @@ def build_listing_message(item: dict) -> str:
             f"{primary_line}"
             f"{compare_line}"
             f"{secondary_line}"
+            f"{flag_line}"
+            f"{note_line}"
             f"{summary_line}\n"
             f"🔗 <a href=\"{source_url}\">상세보기</a>"
         )
