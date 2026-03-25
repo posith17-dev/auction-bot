@@ -10,6 +10,11 @@ def _fmt_number(value) -> str:
     return str(value)
 
 
+def _md_cell(value) -> str:
+    text = str(value or "")
+    return text.replace("|", "/").replace("\n", " ").strip()
+
+
 def write_daily_report(
     report_path: Path,
     *,
@@ -105,8 +110,8 @@ def write_daily_report(
                     item_preview = ""
                     market_compare = ""
             lines.append(
-                f"| {item.get('property_type','')} | {item.get('title','')} | {item.get('region','')} | {item.get('auction_date') or ''} | "
-                f"{attachments[:120]} | {item_preview[:120]} | {market_compare[:80]} | {summary[:160]} |"
+                f"| {_md_cell(item.get('property_type',''))} | {_md_cell(item.get('title',''))} | {_md_cell(item.get('region',''))} | {_md_cell(item.get('auction_date') or '')} | "
+                f"{_md_cell(attachments[:120])} | {_md_cell(item_preview[:120])} | {_md_cell(market_compare[:80])} | {_md_cell(summary[:160])} |"
             )
     else:
         lines.append("| customs notice 0건 |  |  |  |  |  |  |  |")
