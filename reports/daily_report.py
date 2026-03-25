@@ -40,13 +40,13 @@ def write_daily_report(
         "",
         "## search summaries",
         "",
-        "| profile | region | total_cnt | pages | fetched |",
-        "|---|---|---:|---:|---:|",
+        "| source | profile | region | total_cnt | pages | fetched |",
+        "|---|---|---|---:|---:|---:|",
     ]
 
     for item in search_summaries:
         lines.append(
-            f"| {item.get('search_name','')} | {item.get('region_name','')} | "
+            f"| {item.get('source','courtauction')} | {item.get('search_name','')} | {item.get('region_name','')} | "
             f"{item.get('total_cnt',0)} | {item.get('total_pages',0)} | {item.get('items_fetched',0)} |"
         )
 
@@ -55,28 +55,28 @@ def write_daily_report(
             "",
             "## alert matches",
             "",
-            "| title | region | type | 감정가 | 최저매각가 | 할인율(%) | score | 매각기일 |",
-            "|---|---|---|---:|---:|---:|---:|---|",
+            "| source | title | region | type | 감정가 | 최저매각가 | 할인율(%) | score | 매각기일 |",
+            "|---|---|---|---|---:|---:|---:|---:|---|",
         ]
     )
     if alert_matches:
         for item in alert_matches[:10]:
             lines.append(
-                f"| {item.get('title','')} | {item.get('region','')} | {item.get('property_type','')} | "
+                f"| {item.get('source','')} | {item.get('title','')} | {item.get('region','')} | {item.get('property_type','')} | "
                 f"{_fmt_number(item.get('appraisal_price'))} | {_fmt_number(item.get('min_bid_price'))} | "
                 f"{_fmt_number(item.get('discount_rate'))} | {_fmt_number(item.get('opportunity_score'))} | "
                 f"{item.get('auction_date') or ''} |"
             )
     else:
-        lines.append("| 신규 조건 매칭 0건 |  |  |  |  |  |  |  |")
+        lines.append("| - | 신규 조건 매칭 0건 |  |  |  |  |  |  |  |")
 
     lines.extend(
         [
             "",
             "## top discount listings",
             "",
-            "| 사건번호 | 제목 | 지역 | 감정가 | 최저매각가 | 할인율(%) | score | 매각기일 |",
-            "|---|---|---|---:|---:|---:|---:|---|",
+            "| source | 사건번호 | 제목 | 지역 | 감정가 | 최저매각가 | 할인율(%) | score | 매각기일 |",
+            "|---|---|---|---|---:|---:|---:|---:|---|",
         ]
     )
     for item in sorted(
@@ -88,7 +88,7 @@ def write_daily_report(
         ),
     )[:10]:
         lines.append(
-            f"| {item.get('listing_id','')} | {item.get('title','')} | {item.get('region','')} | "
+            f"| {item.get('source','')} | {item.get('listing_id','')} | {item.get('title','')} | {item.get('region','')} | "
             f"{_fmt_number(item.get('appraisal_price'))} | {_fmt_number(item.get('min_bid_price'))} | "
             f"{_fmt_number(item.get('discount_rate'))} | {_fmt_number(item.get('opportunity_score'))} | "
             f"{item.get('auction_date') or ''} |"
@@ -99,8 +99,8 @@ def write_daily_report(
             "",
             "## top opportunity listings",
             "",
-            "| 사건번호 | 제목 | 지역 | 할인율(%) | round_score | score | 매각기일 |",
-            "|---|---|---|---:|---:|---:|---|",
+            "| source | 사건번호 | 제목 | 지역 | 할인율(%) | round_score | score | 매각기일 |",
+            "|---|---|---|---|---:|---:|---:|---|",
         ]
     )
     for item in sorted(
@@ -112,7 +112,7 @@ def write_daily_report(
         ),
     )[:10]:
         lines.append(
-            f"| {item.get('listing_id','')} | {item.get('title','')} | {item.get('region','')} | "
+            f"| {item.get('source','')} | {item.get('listing_id','')} | {item.get('title','')} | {item.get('region','')} | "
             f"{_fmt_number(item.get('discount_rate'))} | {_fmt_number(item.get('round_score'))} | "
             f"{_fmt_number(item.get('opportunity_score'))} | {item.get('auction_date') or ''} |"
         )
@@ -122,13 +122,13 @@ def write_daily_report(
             "",
             "## fetched listings",
             "",
-            "| 사건번호 | 제목 | 지역 | 감정가 | 최저매각가 | 할인율(%) | score | 매각기일 |",
-            "|---|---|---|---:|---:|---:|---:|---|",
+            "| source | 사건번호 | 제목 | 지역 | 감정가 | 최저매각가 | 할인율(%) | score | 매각기일 |",
+            "|---|---|---|---|---:|---:|---:|---:|---|",
         ]
     )
     for item in listings[:10]:
         lines.append(
-            f"| {item.get('listing_id','')} | {item.get('title','')} | {item.get('region','')} | "
+            f"| {item.get('source','')} | {item.get('listing_id','')} | {item.get('title','')} | {item.get('region','')} | "
             f"{_fmt_number(item.get('appraisal_price'))} | {_fmt_number(item.get('min_bid_price'))} | "
             f"{_fmt_number(item.get('discount_rate'))} | {_fmt_number(item.get('opportunity_score'))} | "
             f"{item.get('auction_date') or ''} |"

@@ -51,3 +51,19 @@ searches:
     appraisal_max: "500000000"
     min_bid_min: ""
     min_bid_max: ""
+
+customs_searches:
+  - search_name: kcs_hq_notice
+    office_name: 관세청
+    base_url: https://www.customs.go.kr
+    list_path: /kcs/ad/go/gongMeList.do
+    detail_path: /kcs/ad/go/gongMeInfo.do
+    mi: "2898"
+    tcd: "1"
+  - search_name: busan_customs_notice
+    office_name: 부산세관
+    base_url: https://www.customs.go.kr
+    list_path: /busan/ad/go/gongMeList.do
+    detail_path: /busan/ad/go/gongMeInfo.do
+    mi: "7178"
+    tcd: "1"

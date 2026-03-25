@@ -10,6 +10,7 @@ import yaml
 
 from alerts.telegram import send_message
 from collector.court_auction import CourtAuctionCollector, SearchConfig
+from collector.customs_notice import CustomsNoticeCollector, CustomsNoticeSearchConfig, normalize_notice
 from reports.daily_report import write_daily_report
 from storage.schema import connect, prune_old_data, upsert_listings
 
@@ -28,6 +29,10 @@ def load_config(path: Path) -> dict:
 
 def build_search_config(raw: dict) -> SearchConfig:
     return SearchConfig(**dict(raw))
+
+
+def build_customs_search_config(raw: dict) -> CustomsNoticeSearchConfig:
+    return CustomsNoticeSearchConfig(**dict(raw))
 
 
 def _load_env_file_values(*keys: str) -> dict[str, str]:
@@ -134,6 +139,10 @@ def _resolve_searches(cfg: dict) -> list[dict]:
     return [cfg["search"]]
 
 
+def _resolve_customs_searches(cfg: dict) -> list[dict]:
+    return list(cfg.get("customs_searches") or [])
+
+
 def _merge_listings(listings: list[dict]) -> list[dict]:
     merged: dict[str, dict] = {}
     for item in listings:
@@ -163,6 +172,17 @@ def _fmt_krw(value: int | None) -> str:
 
 
 def build_listing_message(item: dict) -> str:
+    if item.get("source") == "customs_notice":
+        title = html.escape(str(item.get("title") or "공매공고"))
+        region = html.escape(str(item.get("region") or ""))
+        auction_date = html.escape(str(item.get("auction_date") or "-"))
+        source_url = html.escape(str(item.get("source_url") or ""))
+        return (
+            f"📢 <b>[공매공고]</b> {region} {title}\n"
+            f"📅 공고일: {auction_date}\n"
+            f"🔗 <a href=\"{source_url}\">상세보기</a>"
+        )
+
     title = html.escape(str(item.get("title") or item.get("property_type") or "경매 물건"))
     region = html.escape(str(item.get("region") or ""))
     address = html.escape(str(item.get("address") or "-"))
@@ -190,6 +210,7 @@ def main() -> int:
     telegram_cfg = resolve_telegram_config(cfg.get("telegram"))
 
     collector = CourtAuctionCollector()
+    customs_collector = CustomsNoticeCollector()
     search_summaries = []
     collected_listings = []
     raw_searches = _resolve_searches(cfg)
@@ -197,7 +218,25 @@ def main() -> int:
         search_cfg = build_search_config(raw_search)
         listings, meta = collector.fetch_all(search_cfg)
         collected_listings.extend(listings)
+        meta["source"] = "courtauction"
         search_summaries.append(meta)
+
+    raw_customs_searches = _resolve_customs_searches(cfg)
+    for raw_search in raw_customs_searches:
+        search_cfg = build_customs_search_config(raw_search)
+        notices = customs_collector.fetch_notices(search_cfg)
+        normalized = [normalize_notice(item, search=search_cfg) for item in notices]
+        collected_listings.extend(normalized)
+        search_summaries.append(
+            {
+                "source": "customs_notice",
+                "total_cnt": len(normalized),
+                "total_pages": 1,
+                "items_fetched": len(normalized),
+                "region_name": search_cfg.office_name,
+                "search_name": search_cfg.search_name,
+            }
+        )
 
     listings = _merge_listings(collected_listings)
     total_cnt = sum(int(item.get("total_cnt", 0)) for item in search_summaries)
@@ -214,9 +253,12 @@ def main() -> int:
     )
     pruned_count = prune_old_data(con, months=int(env_cfg.get("retain_months", 3)))
 
-    first_search = build_search_config(raw_searches[0])
-    report_name = "multi_search" if len(search_summaries) > 1 else search_summaries[0]["search_name"]
-    stamp = report_name + "_" + first_search.bid_begin_ymd + "_" + first_search.bid_end_ymd
+    report_name = "multi_source" if len(search_summaries) > 1 else search_summaries[0]["search_name"]
+    if raw_searches:
+        first_search = build_search_config(raw_searches[0])
+        stamp = report_name + "_" + first_search.bid_begin_ymd + "_" + first_search.bid_end_ymd
+    else:
+        stamp = report_name
     report_path = ROOT / "reports" / f"daily_report_{stamp}.md"
     latest_report = ROOT / "reports" / "daily_report_latest.md"
     write_daily_report(

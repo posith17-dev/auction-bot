@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -80,10 +81,11 @@ def _default_referer_url(search: CustomsNoticeSearchConfig) -> str:
 
 def normalize_notice(item: dict[str, Any], search: CustomsNoticeSearchConfig | None = None) -> dict[str, Any]:
     search = search or CustomsNoticeSearchConfig()
-    listing_id = item.get("seq") or item.get("detail_url") or item.get("title")
     department = item.get("department") or search.office_name or ""
     title = item.get("title") or ""
     published_date = item.get("published_date")
+    stable_key = "|".join([department, str(published_date or ""), title])
+    listing_id = hashlib.sha1(stable_key.encode("utf-8")).hexdigest()[:16]
     return {
         "source": "customs_notice",
         "listing_id": f"customs_notice:{listing_id}",
@@ -133,12 +135,25 @@ class CustomsNoticeCollector:
     def fetch_list_html(self, search: CustomsNoticeSearchConfig) -> str:
         headers = {"Referer": _default_referer_url(search)}
         headers["Connection"] = "close"
-        resp = self.session.get(
-            f"{search.base_url}{search.list_path}",
-            params=self.build_params(search),
-            headers=headers,
-            timeout=20,
-        )
+        url = f"{search.base_url}{search.list_path}"
+        params = self.build_params(search)
+        try:
+            resp = self.session.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=20,
+            )
+        except requests.RequestException:
+            # Some customs sub-sites intermittently reset pooled TLS connections.
+            fallback_headers = dict(DEFAULT_HEADERS)
+            fallback_headers.update(headers)
+            resp = requests.get(
+                url,
+                params=params,
+                headers=fallback_headers,
+                timeout=20,
+            )
         resp.raise_for_status()
         return resp.text
 
@@ -187,7 +202,12 @@ class CustomsNoticeCollector:
         return self.parse_list_html(html_text, search=search)
 
     def fetch_detail_text(self, detail_url: str) -> str:
-        resp = self.session.get(detail_url, headers={"Connection": "close"}, timeout=20)
+        try:
+            resp = self.session.get(detail_url, headers={"Connection": "close"}, timeout=20)
+        except requests.RequestException:
+            fallback_headers = dict(DEFAULT_HEADERS)
+            fallback_headers["Connection"] = "close"
+            resp = requests.get(detail_url, headers=fallback_headers, timeout=20)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         content_candidates = [
