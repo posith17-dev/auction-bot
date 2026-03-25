@@ -226,6 +226,8 @@ def _label_market_source(source: str) -> str:
         "musinsa": "Musinsa",
         "musinsa_fallback": "Musinsa",
         "danawa": "Danawa",
+        "vivino": "Vivino",
+        "vivino_search": "Vivino",
     }
     return mapping.get(source, source or "-")
 
@@ -357,6 +359,7 @@ def build_listing_message(item: dict) -> str:
         all_item_samples: list[dict] = []
         item_samples: list[dict] = []
         market_compare: dict | None = None
+        market_status: dict | None = None
         raw_json = item.get("raw_json") or ""
         if isinstance(raw_json, str):
             try:
@@ -365,11 +368,13 @@ def build_listing_message(item: dict) -> str:
                 all_item_samples = list(raw.get("item_samples") or [])
                 item_samples = all_item_samples[:2]
                 market_compare = raw.get("market_compare")
+                market_status = raw.get("market_status")
             except Exception:
                 summary = ""
                 all_item_samples = []
                 item_samples = []
                 market_compare = None
+                market_status = None
         primary_item = item_samples[0] if item_samples else {}
         secondary_item = item_samples[1] if len(item_samples) > 1 else {}
         primary_name = html.escape(str(primary_item.get("item_name") or "-"))
@@ -410,6 +415,16 @@ def build_listing_message(item: dict) -> str:
                 f" / 할인 {discount_text}"
                 f"\n🏷 시세소스: {html.escape(source_text)}"
             )
+        elif market_status:
+            source_text = _label_market_source(str(market_status.get("source") or "").strip())
+            note = html.escape(str(market_status.get("note") or "시세 자동확인 미완료"))
+            query = html.escape(str(market_status.get("query") or primary_item.get("item_name") or "-"))
+            compare_line = (
+                f"\n💹 시세비교: {note}"
+                f"\n🏷 시세소스: {html.escape(source_text)} / 검색어 {query}"
+            )
+        elif "주류" in regulatory_flags:
+            compare_line = "\n💹 시세비교: 주류 시세 자동확인 미완료"
         summary_line = ""
         if summary:
             summary_line = f"\n📝 {html.escape(summary[:100])}"

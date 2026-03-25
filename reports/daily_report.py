@@ -126,6 +126,7 @@ def write_daily_report(
                         ),
                     )
                     compare = raw.get("market_compare") or {}
+                    market_status = raw.get("market_status") or {}
                     if compare:
                         compare_source = str(compare.get("source") or "").strip()
                         compare_suffix = f" ({compare_source})" if compare_source else ""
@@ -134,6 +135,10 @@ def write_daily_report(
                             f"{int(compare.get('market_median_price') or 0):,}원"
                             f"{compare_suffix}"
                         )
+                    elif market_status:
+                        source = str(market_status.get("source") or "").strip()
+                        note = str(market_status.get("note") or "시세 자동확인 미완료").strip()
+                        market_compare = f"{note} ({source})".strip()
                 except Exception:
                     attachments = ""
                     summary = ""

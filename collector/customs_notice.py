@@ -94,6 +94,35 @@ APPAREL_HINT_KEYWORDS = {
     "가방",
     "래쉬가드",
 }
+LIQUOR_HINT_KEYWORDS = {
+    "wine",
+    "whisky",
+    "whiskey",
+    "vodka",
+    "rum",
+    "gin",
+    "beer",
+    "brandy",
+    "liqueur",
+    "liquor",
+    "champagne",
+    "sparkling",
+    "tequila",
+    "cognac",
+    "포도주",
+    "와인",
+    "주류",
+    "양주",
+    "위스키",
+    "맥주",
+    "보드카",
+    "럼",
+    "진",
+    "브랜디",
+    "샴페인",
+    "데킬라",
+    "코냑",
+}
 
 
 @dataclass
@@ -307,6 +336,11 @@ def _score_title_match(query_tokens: list[str], candidate_title: str) -> float:
 def _is_apparel_candidate(item_name: str, spec: str, hs_name: str) -> bool:
     text = " ".join(part for part in [item_name, spec, hs_name] if part).lower()
     return any(keyword in text for keyword in APPAREL_HINT_KEYWORDS)
+
+
+def _is_liquor_candidate(item_name: str, spec: str, hs_name: str) -> bool:
+    text = " ".join(part for part in [item_name, spec, hs_name] if part).lower()
+    return any(keyword in text for keyword in LIQUOR_HINT_KEYWORDS)
 
 
 def classify_notice_type(title: str | None, summary: str | None = None) -> str:
@@ -636,6 +670,55 @@ class CustomsNoticeCollector:
             "source": "musinsa",
         }
 
+    def search_market_price_vivino(self, query: str) -> dict[str, Any] | None:
+        if not query:
+            return None
+        resp = self.session.get(
+            "https://www.vivino.com/search/wines",
+            params={"q": query},
+            headers={"Connection": "close"},
+            timeout=12,
+        )
+        resp.raise_for_status()
+        html_text = resp.text
+        if not html_text:
+            return None
+        unescaped = html_text.replace("&quot;", '"')
+        query_tokens = _tokenize_compare(query)
+        pattern = re.compile(
+            r'"name":"(?P<title>[^"]+)".{0,1200}?"price":(?P<price>[0-9]{3,})',
+            re.IGNORECASE | re.DOTALL,
+        )
+        matches: list[dict[str, Any]] = []
+        for found in pattern.finditer(unescaped):
+            title = _clean_text(found.group("title"))
+            price = _parse_int(found.group("price"))
+            if not title or price is None:
+                continue
+            match_score = _score_title_match(query_tokens, title)
+            if match_score < 0.25:
+                continue
+            matches.append(
+                {
+                    "title": title,
+                    "price": price,
+                    "match_score": round(match_score, 3),
+                }
+            )
+        if not matches:
+            return None
+        prices = [item["price"] for item in matches]
+        best = max(matches, key=lambda item: (item["match_score"], -item["price"]))
+        return {
+            "query": query,
+            "min_price": min(prices),
+            "median_price": int(statistics.median(prices)),
+            "best_title": best["title"],
+            "best_url": f"https://www.vivino.com/search/wines?q={requests.utils.quote(query)}",
+            "match_score": best["match_score"],
+            "source": "vivino",
+        }
+
     def enrich_notice_items(self, detail_url: str, attachments: list[dict[str, Any]]) -> dict[str, Any]:
         xlsx_attachment = next(
             (
@@ -655,8 +738,10 @@ class CustomsNoticeCollector:
         except Exception:
             return {"item_samples": [], "market_compare": None}
         market_compare = None
+        market_status: dict[str, Any] | None = None
         for item in items[:3]:
             is_apparel_item = _is_apparel_candidate(item["item_name"], item["spec"], item["hs_name"])
+            is_liquor_item = _is_liquor_candidate(item["item_name"], item["spec"], item["hs_name"])
             query = (
                 item["item_name"].strip()
                 if is_apparel_item
@@ -668,6 +753,8 @@ class CustomsNoticeCollector:
             try:
                 if is_apparel_item:
                     market = self.search_market_price_musinsa(query)
+                elif is_liquor_item:
+                    market = self.search_market_price_vivino(query)
             except Exception:
                 market = None
             if market is None:
@@ -693,9 +780,20 @@ class CustomsNoticeCollector:
                     "source": market["source"],
                 }
                 break
+            if market is None and is_liquor_item and market_status is None:
+                market_status = {
+                    "category": "liquor",
+                    "query": query,
+                    "status": "manual_review",
+                    "source": "vivino_search",
+                    "note": "주류 시세 자동확인 미완료",
+                    "search_url": f"https://www.vivino.com/search/wines?q={requests.utils.quote(query)}",
+                    "item_name": item["item_name"],
+                }
         return {
             "item_samples": items[:CUSTOMS_ITEM_PREVIEW_LIMIT],
             "market_compare": market_compare,
+            "market_status": market_status,
         }
 
     def fetch_detail_data(self, detail_url: str) -> dict[str, Any]:
