@@ -1,6 +1,6 @@
 # auction-bot
 
-법원경매 일일 수집기 MVP입니다.
+법원경매/세관공매를 운영 중인 경매·공매 수집기 MVP입니다.
 
 현재 목표는 "좋은 경매 물건을 자동 판단해서 채널로 보내는 것"이고, 첫 소스로 법원경매(`courtauction.go.kr`)를 붙였습니다.
 관세청 공매공고 공개 게시판도 `run_daily.py`에 연결했고, 현재 본청/부산 게시판 첫 페이지 10건 파싱까지 확인했습니다.
@@ -9,6 +9,7 @@
 
 - 소스: 법원경매
 - 추가 소스: 관세청 공매공고 공개 게시판
+- 실험 소스: 온비드 동산 알림 MVP 스캐폴드
 - 저장: DuckDB
 - 출력:
   - daily markdown report
@@ -43,7 +44,10 @@
 /home/ubuntu/auction-bot/
 ├── collector/
 │   ├── court_auction.py
-│   └── customs_notice.py
+│   ├── customs_notice.py
+│   └── onbid_movable.py
+├── docs/
+│   └── onbid_movable_mvp.md
 ├── storage/
 │   ├── auction.duckdb
 │   └── schema.py
@@ -56,6 +60,8 @@
 │   ├── auction-daily.timer
 │   └── install_auction_timer.sh
 ├── config.yaml
+├── scripts/
+│   └── onbid_movable_smoke_test.py
 └── run_daily.py
 ```
 
@@ -169,6 +175,26 @@ systemctl status auction-daily.service --no-pager -n 30
 3. 상세 permalink 개선
 4. 온비드 또는 다른 공개 소스 추가
 5. 관세청 공매공고 공개 게시판 연결
+
+## 온비드 동산 메모
+
+- 파일:
+  - `collector/onbid_movable.py`
+  - `scripts/onbid_movable_smoke_test.py`
+  - `docs/onbid_movable_mvp.md`
+- 현재 상태:
+  - 운영 편입 전
+  - Playwright 기반 목록 DOM 읽기 스모크 테스트 골격만 추가
+  - 모바일 동산 테마 URL 후보 확보:
+    - `https://medu.onbid.co.kr/mo/cta/onbidbest/clickTop20CltrListByEtc.do`
+    - `https://medu.onbid.co.kr/mo/cta/onbidbest/interestTop20CltrListByEtc.do`
+    - `https://medu.onbid.co.kr/mo/cta/onbidbest/halfOutletCltrListByEtc.do`
+  - Playwright 렌더링 결과 `clickTop20CltrListByEtc.do`에서는 실제 동산 텍스트가 보이는 것까지 확인
+  - 현재 실험 필터는 `자동차/운송장비`, `물품(기계)`, `물품(기타)` 카테고리를 우선 대상으로 둠
+  - 아직 파서 셀렉터를 고정하지 않았으므로, 운영 편입 전 단계로 유지
+- 이유:
+  - 온비드는 상세 진입 구조는 확보했지만, 목록 본체 요청을 아직 안정적으로 고정하지 못했다
+  - 따라서 지금은 "판단 자동화"보다 "관심 키워드 알림 MVP"를 목표로 분리 관리한다
 
 ## 관세청 공매공고 메모
 

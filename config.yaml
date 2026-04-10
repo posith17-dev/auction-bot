@@ -9,7 +9,7 @@ telegram:
   chat_id: "-1003859076473"
   bot_token_env: "TELEGRAM_BOT_TOKEN"
   chat_id_env: "TELEGRAM_CHAT_ID"
-  customs_enabled: true
+  customs_enabled: false
   customs_chat_id: "-1003859076473"
   customs_chat_id_env: ""
 
@@ -94,3 +94,63 @@ customs_searches:
     list_path: /pyeongtaek/ad/go/gongMeList.do
     detail_path: /pyeongtaek/ad/go/gongMeInfo.do
     tcd: "1"
+
+onbid_movable_alerts:
+  enabled: false
+  notes: "임시 비활성. 기존 medu.onbid.co.kr 모바일 동산 목록/JSON 경로가 2026-04 기준 404로 깨져 재탐색 전까지 daily run에서 제외."
+  telegram_enabled: true
+  telegram_chat_id: "-1003859076473"
+  start_url: "https://www.onbid.co.kr"
+  list_url: "https://medu.onbid.co.kr/mo/cta/onbidbest/clickTop20CltrListByEtc.do"
+  data_url_candidate: "https://medu.onbid.co.kr/mo/cta/onbidbest/data/clickTop20CltrListByEtc.do"
+  json_data_url: "https://medu.onbid.co.kr/mo/cta/cltr/data/cltrSearchList.do"
+  json_presets:
+    - machine
+    - other
+  alternate_urls:
+    - "https://medu.onbid.co.kr/mo/cta/onbidbest/interestTop20CltrListByEtc.do"
+    - "https://medu.onbid.co.kr/mo/cta/onbidbest/halfOutletCltrListByEtc.do"
+  max_items: 10
+  include_categories:
+    - 물품(기계)
+  exclude_categories:
+    - 부동산
+  keywords:
+    - 자동차
+    - 차량
+    - 승용
+    - 화물차
+    - SUV
+    - 버스
+    - 오토바이
+    - 지게차
+    - 굴삭기
+    - 덤프트럭
+    - 기계
+    - 장비
+    - 공구
+    - 설비
+    - 모터
+    - 발전기
+    - 펌프
+    - 컴프레서
+    - 명품
+    - 시계
+    - 가방
+    - 카메라
+    - 노트북
+    - 아이폰
+    - 맥북
+    - 전자기기
+    - 모니터
+    - 컴퓨터
+    - 본체
+    - 서버
+    - 프린터
+    - 복합기
+    - 계측기
+    - 측정기
+  exclude_keywords:
+    - 토지
+    - 아파트
+    - 오피스텔

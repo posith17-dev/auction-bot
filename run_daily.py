@@ -12,6 +12,11 @@ import yaml
 from alerts.telegram import send_message
 from collector.court_auction import CourtAuctionCollector, SearchConfig
 from collector.customs_notice import CustomsNoticeCollector, CustomsNoticeSearchConfig, normalize_notice
+from collector.onbid_movable import (
+    OnbidMovableAlertConfig,
+    fetch_movable_candidates,
+    normalize_onbid_movable_listing,
+)
 from reports.daily_report import write_daily_report
 from storage.schema import connect, prune_old_data, upsert_listings
 
@@ -34,6 +39,10 @@ def build_search_config(raw: dict) -> SearchConfig:
 
 def build_customs_search_config(raw: dict) -> CustomsNoticeSearchConfig:
     return CustomsNoticeSearchConfig(**dict(raw))
+
+
+def build_onbid_movable_config(raw: dict) -> OnbidMovableAlertConfig:
+    return OnbidMovableAlertConfig(**dict(raw))
 
 
 def _load_env_file_values(*keys: str) -> dict[str, str]:
@@ -173,6 +182,29 @@ def filter_new_customs_notices(
     )
 
 
+def filter_new_onbid_movable_items(
+    listings: list[dict],
+    *,
+    new_listing_ids: list[str],
+) -> list[dict]:
+    if not new_listing_ids:
+        return []
+    new_ids = set(new_listing_ids)
+    matched = [
+        item
+        for item in listings
+        if item.get("listing_id") in new_ids and item.get("source") == "onbid_movable"
+    ]
+    return sorted(
+        matched,
+        key=lambda row: (
+            str(row.get("property_type") or ""),
+            -(row.get("min_bid_price") or 0),
+            str(row.get("title") or ""),
+        ),
+    )
+
+
 def _resolve_searches(cfg: dict) -> list[dict]:
     if cfg.get("searches"):
         return list(cfg["searches"])
@@ -181,6 +213,10 @@ def _resolve_searches(cfg: dict) -> list[dict]:
 
 def _resolve_customs_searches(cfg: dict) -> list[dict]:
     return list(cfg.get("customs_searches") or [])
+
+
+def _resolve_onbid_movable(cfg: dict) -> dict:
+    return dict(cfg.get("onbid_movable_alerts") or {})
 
 
 def _merge_listings(listings: list[dict]) -> list[dict]:
@@ -344,6 +380,38 @@ def _extract_flagged_item_names(item_samples: list[dict]) -> list[str]:
 
 
 def build_listing_message(item: dict) -> str:
+    if item.get("source") == "onbid_movable":
+        title = html.escape(str(item.get("title") or "온비드 동산"))
+        category = html.escape(str(item.get("property_type") or "동산/기타자산"))
+        rank_label = html.escape(str(item.get("status") or ""))
+        source_url = html.escape(str(item.get("source_url") or ""))
+        min_bid = item.get("min_bid_price")
+        raw_json = item.get("raw_json") or ""
+        raw = {}
+        if isinstance(raw_json, str):
+            try:
+                raw = json.loads(raw_json)
+            except Exception:
+                raw = {}
+        source_hint = str(raw.get("rank_label") or "").strip().lower()
+        source_label = {
+            "machine": "물품(기계)",
+            "other": "물품(기타)",
+            "ocl": "자동차/운송장비",
+        }.get(source_hint, "")
+        msg = (
+            f"📦 <b>[온비드동산]</b> {category}\n"
+            f"📌 {title}\n"
+        )
+        if source_label:
+            msg += f"🗂 분류: {html.escape(source_label)}\n"
+        if rank_label:
+            msg += f"🏷 {rank_label}\n"
+        if min_bid is not None:
+            msg += f"💰 최저입찰가: {_fmt_krw(int(min_bid))}\n"
+        msg += f"🔗 <a href=\"{source_url}\">상세보기</a>"
+        return msg
+
     if item.get("source") == "customs_notice":
         title = html.escape(str(item.get("title") or "공매공고"))
         raw_title = str(item.get("title") or "")
@@ -512,6 +580,40 @@ def main() -> int:
             }
         )
 
+    raw_onbid_cfg = _resolve_onbid_movable(cfg)
+    if raw_onbid_cfg.get("enabled"):
+        try:
+            onbid_cfg = build_onbid_movable_config(raw_onbid_cfg)
+            onbid_items = fetch_movable_candidates(onbid_cfg)
+            normalized_onbid = [
+                normalize_onbid_movable_listing(item, search_name="onbid_movable")
+                for item in onbid_items
+            ]
+            collected_listings.extend(normalized_onbid)
+            search_summaries.append(
+                {
+                    "source": "onbid_movable",
+                    "total_cnt": len(normalized_onbid),
+                    "total_pages": 1,
+                    "items_fetched": len(normalized_onbid),
+                    "region_name": "온비드",
+                    "search_name": "onbid_movable",
+                }
+            )
+        except Exception as exc:
+            print(f"WARN: onbid_movable skipped due to fetch error: {exc}")
+            search_summaries.append(
+                {
+                    "source": "onbid_movable",
+                    "total_cnt": 0,
+                    "total_pages": 0,
+                    "items_fetched": 0,
+                    "region_name": "온비드",
+                    "search_name": "onbid_movable",
+                    "error": str(exc),
+                }
+            )
+
     listings = _merge_listings(collected_listings)
     total_cnt = sum(int(item.get("total_cnt", 0)) for item in search_summaries)
     total_pages = sum(int(item.get("total_pages", 0)) for item in search_summaries)
@@ -574,6 +676,10 @@ def main() -> int:
         listings,
         new_listing_ids=upsert_result["new_listing_ids"],
     )
+    onbid_movable_matches = filter_new_onbid_movable_items(
+        listings,
+        new_listing_ids=upsert_result["new_listing_ids"],
+    )
     pruned_count = prune_old_data(con, months=int(env_cfg.get("retain_months", 3)))
 
     report_name = "multi_source" if len(search_summaries) > 1 else search_summaries[0]["search_name"]
@@ -616,12 +722,22 @@ def main() -> int:
                     build_listing_message(item),
                     parse_mode="HTML",
                 )
+        if raw_onbid_cfg.get("enabled") and raw_onbid_cfg.get("telegram_enabled"):
+            onbid_chat_id = str(raw_onbid_cfg.get("telegram_chat_id") or telegram_cfg.get("chat_id") or "").strip()
+            for item in onbid_movable_matches:
+                send_message(
+                    telegram_cfg.get("bot_token", ""),
+                    onbid_chat_id,
+                    build_listing_message(item),
+                    parse_mode="HTML",
+                )
 
     print(f"total_cnt={total_cnt}")
     print(f"items_fetched={items_fetched}")
     print(f"new_count={upsert_result['new_count']}")
     print(f"alert_match_count={len(alert_matches)}")
     print(f"customs_alert_count={len(customs_notice_matches)}")
+    print(f"onbid_movable_alert_count={len(onbid_movable_matches)}")
     print(f"pruned_count={pruned_count}")
     print(f"duckdb_path={db_path}")
     print(f"report_path={report_path}")
